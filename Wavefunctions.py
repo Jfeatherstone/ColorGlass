@@ -17,11 +17,15 @@ class Wavefunction():
 
     _colorChargeField = None
     _gaugeField = None
+    #_wilsonLine = None # May not be implemented depending on nucleus/proton
+    #_adjointWilsonLine = None # May not be implemented depending on nucleus/proton
 
     # Some variables to keep track of what has been calculated/generated so far
     # allowing us to avoid redundant computations
     _colorChargeFieldExists = False
     _guageFieldExists = False
+    #_wilsonLineExists = False # May not be implemented depending on nucleus/proton
+    #_adjointWilsonLineExists = False # May not be implemented depending on nucleus/proton
 
     def __init__(self, N, delta, mu, colorCharges, fftNormalization=None, M=.5, g=1):
         """
@@ -113,4 +117,3 @@ class Wavefunction():
         self._gaugeFieldExists = True
 
         return self._gaugeField
-
