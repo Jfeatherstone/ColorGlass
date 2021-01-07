@@ -23,7 +23,7 @@ class Wavefunction():
     # Some variables to keep track of what has been calculated/generated so far
     # allowing us to avoid redundant computations
     _colorChargeFieldExists = False
-    _guageFieldExists = False
+    _gaugeFieldExists = False
     #_wilsonLineExists = False # May not be implemented depending on nucleus/proton
     #_adjointWilsonLineExists = False # May not be implemented depending on nucleus/proton
 
@@ -81,12 +81,11 @@ class Wavefunction():
 
         If the field already exists, it is simply returned and no calculation is done
         """
-        if self._guageFieldExists:
+        if self._gaugeFieldExists:
             return self._gaugeField
 
         # Make sure the charge field has already been generated
-        if not self._colorChargeFieldExists:
-            self.colorChargeField()
+        self.colorChargeField()
 
         # Compute the fourier transform of the charge field
         chargeDensityFFTArr = fft2(self._colorChargeField, axes=(-2,-1), norm=self.fftNormalization)
@@ -111,7 +110,7 @@ class Wavefunction():
         for k in range(self.gluonDOF):
             gaugeFieldFFTArr[k] = [vec_AHat_mn(i, jArr, chargeDensityFFTArr[k,i,jArr]) for i in iArr]
 
-        # Take the inverse fourier transform to get the actual guage field
+        # Take the inverse fourier transform to get the actual gauge field
         self._gaugeField = np.real(ifft2(gaugeFieldFFTArr, axes=(-2, -1), norm=self.fftNormalization))
         # Make sure this process isn't repeated unnecessarily by denoting that it has been done
         self._gaugeFieldExists = True

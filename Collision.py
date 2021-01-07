@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.fft import ifft2, fft2
 
 from Wavefunctions import Wavefunction
 
@@ -9,11 +10,13 @@ class Collision():
 
     _omega = None
     _omegaFFT = None
-    _particleProduction = None
+    _particlesProduced = None
+    _momentaBins = None
 
     _omegaExists = False
     _omegaFFTExists = False
-    _particleProductionExists = False
+    _particlesProducedExists = False
+    _momentaBinsExists = False
 
     def __init__(self, wavefunction1: Wavefunction, wavefunction2: Wavefunction):
         """
@@ -50,12 +53,18 @@ class Collision():
 
         # Carry over some variables so we don't have to call through the wavefunctions so much
         self.N = self.targetWavefunction.N
+        self.length = self.targetWavefunction.length
         self.gluonDOF = self.targetWavefunction.gluonDOF
         self.delta = self.targetWavefunction.delta
-
+        self.fftNormalization = self.targetWavefunction.fftNormalization
         #print(self.targetWavefunction)
         #print(self.incidentWavefunction)
 
+        
+        # Variables to do with binning the momenta later on
+        self.binSize = 4*np.pi/self.length
+        self.kMax = 1/self.delta
+        self.numBins = int(self.kMax/self.binSize)
 
     def omega(self):
 
@@ -81,3 +90,81 @@ class Collision():
                             self._omega[l,n,k,i,j] = np.sum([derivs[l](self.incidentWavefunction.gaugeField()[m], i, j) * derivs[n](self.targetWavefunction.adjointWilsonLine()[k+1, m+1], i, j) for m in range(self.gluonDOF)])
 
         return self._omega
+
+
+    def omegaFFT(self):
+
+        if self._omegaFFTExists:
+            return self._omegaFFT
+
+        # Make sure omega exists
+        self.omega()
+
+        self._omegaFFT = fft2(self._omega, axes=(-2, -1), norm=self.fftNormalization)
+        self._omegaFFTExists = True
+
+        return self._omegaFFT
+
+
+    def momentaBins(self):
+        
+        if self._momentaBinsExists:
+            return self._momentaBins
+
+        self._momentaBins = [i*self.binSize for i in range(self.numBins)]
+        self._momentaBinsExists = True
+
+        return self._momentaBins
+
+    def particlesProduced(self):
+
+        if self._particlesProducedExists:
+            return self._particlesProduced
+
+        momentaMagSquared = np.zeros([self.N, self.N])
+
+        for i in range(self.N):
+            for j in range(self.N):
+                momentaMagSquared[i,j] = 4 / self.delta**2 * (np.sin((2*np.pi*i/self.length)*self.delta/2)**2 + np.sin((2*np.pi*j/self.length)*self.delta/2)**2)
+
+        particleProduction = np.zeros([self.N, self.N])
+
+        # Make sure omegaFFT exists
+        self.omegaFFT()
+
+        # # 2D Levi-Cevita symbol
+        #Matrix Representation
+        LCS = np.array([[0,1],[-1,0]])
+
+        # # 2D Delta function
+        #Matrix Representation
+        KDF = np.array([[1,0],[0,1]])
+
+        for y in range(self.N):
+            for x in range(self.N):
+                # To prevent any divide by zero errors
+                if momentaMagSquared[y,x] == 0:
+                    continue
+
+                for i in range(2):
+                    for j in range(2):
+                        for l in range(2):
+                            for m in range(2):
+
+                                for a in range(self.gluonDOF):
+                                    particleProduction[y,x] += np.real(2/(2*np.pi)**3 / momentaMagSquared[y,x] * (KDF[i,j]*KDF[l,m] + LCS[i,j]*LCS[l,m]) * self._omegaFFT[i,j,a,y,x] * np.conj(self._omegaFFT[l,m,a,y,x]))
+
+        vectorizedParticles = np.reshape(particleProduction, [self.N*self.N])
+        vectorizedMomentaMagSquared = np.reshape(np.sqrt(momentaMagSquared), [self.N*self.N])
+
+        self._particlesProduced = np.zeros(self.numBins)
+        self.momentaBins()
+
+        # Note the use of element-wise (or bitwise) and, "&"
+        for i in range(self.numBins):
+            self._particlesProduced[i] = np.mean(vectorizedParticles[(vectorizedMomentaMagSquared < self.binSize*(i+1)) & (vectorizedMomentaMagSquared > self.binSize*i)])
+
+        self._particlesProducedExists = True
+
+        return self._particlesProduced
+
