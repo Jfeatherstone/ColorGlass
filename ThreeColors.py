@@ -6,7 +6,7 @@ from scipy.linalg import expm
 
 class Nucleus(Wavefunction):
     """
-    Nucleus wavefunction class (2 colors)
+    Nucleus wavefunction class
 
     Inherits the following methods with modification from Wavefunction:
     (see that class for full documentation)
@@ -16,13 +16,13 @@ class Nucleus(Wavefunction):
 
     Implements the following methods:
 
-        constructor - wrapper of Wavefunction.__init__ with colorCharges=2
+        constructor - wrapper of Wavefunction.__init__ with colorCharges=3
 
         wilsonLine() - Returns the calculated Wilson Line for the nucleus
-        return: np.array([N, N, 2, 2])
+        return: np.array([N, N, 3, 3])
 
         adjointWilsonLine() - returns the Wilson Line in the adjoint representation
-        return: np.array([4, 4, N, N])
+        return: np.array([9, 9, N, N])
         
     """
 
@@ -34,22 +34,35 @@ class Nucleus(Wavefunction):
     _wilsonLineExists = False
     _adjointWilsonLineExists = False
 
-    # The pauli matrices, for use in calculating the adjoint representation of the wilson line
-    # specific to using 2 color charges
-    _pauli = np.array([np.array([[1, 0], [0, 1]], dtype='complex'),
-                      np.array([[0, 1], [1, 0]], dtype='complex'),
-                      np.array([[0, -1.j], [1.j, 0]], dtype='complex'),
-                      np.array([[1., 0], [0, -1.]], dtype='complex')])
+    # The Gell-Mann matrices, for use in calculating the adjoint representation of the wilson line
+    # specific to using 3 color charges
+    # First entry is the identity, latter 8 are the proper Gell-Mann matrices
+    _gell_mann = np.array([[[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+                           [[0, 1, 0], [1, 0, 0], [0, 0, 0]],
+                           [[0, -1.j, 0], [1.j, 0, 0], [0, 0, 0]],
+                           [[1, 0, 0], [0, -1, 0], [0, 0, 0]],
+                           [[0, 0, 1], [0, 0, 0], [1, 0, 0]],
+                           [[0, 0, -1.j], [0, 0, 0], [1.j, 0, 0]],
+                           [[0, 0, 0], [0, 0, 1], [0, 1, 0]],
+                           [[0, 0, 0], [0, 0, -1.j], [0, 1, 0]],
+                           [[1/np.sqrt(3), 0, 0], [0, 1/np.sqrt(3), 0], [0, 0, -2/np.sqrt(3)]]
+                          ], dtype='complex')
+
 
     def __init__(self, N, delta, mu, fftNormalization=None, M=.5, g=1):
-        super().__init__(N, delta, mu, 2, fftNormalization, M, g) # Super constructor with colorCharges=2
+        """
+        Wrapper constructor, which calls Wavefunction.__init__ with colorCharges=3
+        """
+        super().__init__(N, delta, mu, 3, fftNormalization, M, g) # Super constructor with colorCharges=3
+
 
     def wilsonLine(self):
         """
         Calculate the Wilson line using the gauge field and the Pauli/Gell-Mann matrices
 
-        If the line already exists, it is simply returned and no calculation is done
+        If the calculation has already been done, it is simply returned and no new calculation is done
         """
+
         if self._wilsonLineExists:
             return self._wilsonLine
 
@@ -57,30 +70,26 @@ class Nucleus(Wavefunction):
         if not self._gaugeFieldExists:
             self.gaugeField()
 
-        #self._wilsonLine = np.zeros([self.gluonDOF+1, self.N, self.N], dtype='complex')
-        self._wilsonLine = np.zeros([self.N, self.N, 2, 2], dtype='complex')
+        # We have a 3x3 matrix at each lattice point
+        self._wilsonLine = np.zeros([self.N, self.N, 3, 3], dtype='complex')
 
         for i in range(self.N):
             for j in range(self.N):
-                # Closed form available for SU(2)
-                normA = np.sqrt(np.sum([np.sqrt(np.real(self._gaugeField[k,i,j])**2 + np.imag(self._gaugeField[k,i,j])**2) for k in range(self.gluonDOF)]))
-                self._wilsonLine[i,j] = self._pauli[0]*np.cos(normA)
-                for k in range(self.gluonDOF):
-                    self._wilsonLine[i,j] += self._pauli[k+1]*self._gaugeField[k,i,j] * 1.j * np.sin(normA) / normA
-                
                 # Numerical form for SU(n)
-                #self._wilsonLine[i,j] = expm(1.j*sum([self._gaugeField[k,i,j]*self._pauli[k+1] for k in range(self.gluonDOF)]))
+                self._wilsonLine[i,j] = expm(1.j*sum([self._gaugeField[k,i,j]*self._gell_mann[k+1] for k in range(self.gluonDOF)]))
 
         self._wilsonLineExists = True
 
         return self._wilsonLine
 
+
     def adjointWilsonLine(self):
         """
         Calculate the Wilson line in the adjoint representation
 
-        If the line already exists, it is simply returned and no calculation is done
+        If the calculation has already been done, it is simply returned and no new calculation is done
         """
+
         if self._adjointWilsonLineExists:
             return self._adjointWilsonLine
         
@@ -94,10 +103,9 @@ class Nucleus(Wavefunction):
             for b in range(self.gluonDOF+1):
                 for i in range(self.N):
                     for j in range(self.N):
-                        #V = sum([self._wilsonLine[k,i,j]*self._pauli[k] for k in range(self.gluonDOF+1)])
                         V = self._wilsonLine[i,j]
                         Vdag = np.conjugate(np.transpose(V))
-                        self._adjointWilsonLine[a,b,i,j] = .5 * np.trace(np.dot(np.dot(self._pauli[a], V), np.dot(self._pauli[b], Vdag)))
+                        self._adjointWilsonLine[a,b,i,j] = .5 * np.trace(np.dot(np.dot(self._gell_mann[a], V), np.dot(self._gell_mann[b], Vdag)))
 
 
         self._adjointWilsonLineExists = True
@@ -110,12 +118,17 @@ class Proton(Wavefunction):
     Proton wavefunction class
 
     Only real difference between the super class is that the color charge field is scaled by a centered gaussian
-    with a width equal to radius
+    with a width equal to the parameter radius
     """
 
     def __init__(self, N, delta, mu, radius, fftNormalization=None, M=.5, g=1):
-        super().__init__(N, delta, mu, 2, fftNormalization, M, g) # Super constructor with colorCharges=2
+        """
+        Wrapper constructor, which calls Wavefunction.__init__ with colorCharges=3 and saves the
+        new parameter, radius
+        """
+        super().__init__(N, delta, mu, 3, fftNormalization, M, g) # Super constructor with colorCharges=3
         self.radius = radius
+
 
     def colorChargeField(self):
         """
@@ -134,6 +147,7 @@ class Proton(Wavefunction):
         # Randomly generate the intial color charge density using a gaussian distribution
         self._colorChargeField = np.random.normal(scale=self.gaussianWidth, size=(self.gluonDOF, self.N, self.N))
         self._colorChargeField *= protonGaussianCorrection
+
         # Make sure we don't regenerate this field since it already exists on future calls
         self._colorChargeFieldExists = True
 
