@@ -4,7 +4,7 @@ This is a toolbox to model color glass condensates.
 
 ## Documentation
 
-You can access the documentation for the project [here](https://jfeatherstone.github.io/ParticleProduction/docs/index.html).
+You can access the documentation for the project [here](https://jfeatherstone.github.io/ParticleProduction/).
 
 ## Optimization
 
