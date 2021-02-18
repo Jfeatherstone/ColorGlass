@@ -1,30 +1,10 @@
-from Wavefunctions import Wavefunction
+from .Wavefunction import Wavefunction
 
 import numpy as np
 from scipy.fft import ifft2, fft2
 from scipy.linalg import expm
 
 class Nucleus(Wavefunction):
-    """
-    Nucleus wavefunction class (2 colors)
-
-    Inherits the following methods with modification from Wavefunction:
-    (see that class for full documentation)
-
-        colorChargeField()
-        gaugeField()
-
-    Implements the following methods:
-
-        constructor - wrapper of Wavefunction.__init__ with colorCharges=2
-
-        wilsonLine() - Returns the calculated Wilson Line for the nucleus
-        return: np.array([N, N, 2, 2])
-
-        adjointWilsonLine() - returns the Wilson Line in the adjoint representation
-        return: np.array([4, 4, N, N])
-        
-    """
 
     _wilsonLine = None
     _adjointWilsonLine = None
@@ -42,13 +22,42 @@ class Nucleus(Wavefunction):
                       np.array([[1., 0], [0, -1.]], dtype='complex')])
 
     def __init__(self, N, delta, mu, fftNormalization=None, M=.5, g=1):
-        super().__init__(N, delta, mu, 2, fftNormalization, M, g) # Super constructor with colorCharges=2
+        r"""
+        Constructor
+        -----------
+
+        Wrapper for `super.__init__` with `colorCharges` = 2.
+
+        Parameters
+        ----------
+        N : positive integer
+            The size of the square lattice to simulate
+
+        delta : positive float
+            The distance between adjacent lattice sites
+
+        mu : positive float
+            The scaling for the random gaussian distribution that generates the color charge density
+
+        fftNormalization : None | "backward" | "ortho" | "forward"
+            Normalization procedure used when computing fourier transforms; see [scipy documentation](https://docs.scipy.org/doc/scipy/reference/generated/scipy.fft.fft.html) for more information
+
+        M : float
+            Experimental parameter in the laplace equation for the gauge field
+
+        g : float
+            Parameter in the laplace equation for the gauge field
+
+        """
+
+        super().__init__(2, N, delta, mu, fftNormalization, M, g) # Super constructor with colorCharges=2
 
     def wilsonLine(self):
         """
-        Calculate the Wilson line using the gauge field and the Pauli/Gell-Mann matrices
+        Calculate the Wilson line using the gauge field and the Pauli matrices using
+        the closed form that exists for the exponential of the Pauli matrices.
 
-        If the line already exists, it is simply returned and no calculation is done
+        If the line already exists, it is simply returned and no calculation is done.
         """
         if self._wilsonLineExists:
             return self._wilsonLine
@@ -77,9 +86,9 @@ class Nucleus(Wavefunction):
 
     def adjointWilsonLine(self):
         """
-        Calculate the Wilson line in the adjoint representation
+        Calculate the Wilson line in the adjoint representation.
 
-        If the line already exists, it is simply returned and no calculation is done
+        If the line already exists, it is simply returned and no calculation is done.
         """
         if self._adjointWilsonLineExists:
             return self._adjointWilsonLine
@@ -103,38 +112,3 @@ class Nucleus(Wavefunction):
         self._adjointWilsonLineExists = True
 
         return self._adjointWilsonLine
-
-
-class Proton(Wavefunction):
-    """
-    Proton wavefunction class
-
-    Only real difference between the super class is that the color charge field is scaled by a centered gaussian
-    with a width equal to radius
-    """
-
-    def __init__(self, N, delta, mu, radius, fftNormalization=None, M=.5, g=1):
-        super().__init__(N, delta, mu, 2, fftNormalization, M, g) # Super constructor with colorCharges=2
-        self.radius = radius
-
-    def colorChargeField(self):
-        """
-        Generates the color charge density field according to a gaussian distribution
-
-        If the field already exists, it is simply returned and no calculation is done
-        """
-        if self._colorChargeFieldExists:
-            return self._colorChargeField
-
-        def gaussian(x, y, r=self.radius, xc=self.xCenter, yc=self.yCenter):
-            return np.exp( - ((x - xc)**2 + (y - yc)**2) / (2*r**2))
-
-        protonGaussianCorrection = np.array([gaussian(i*self.delta, np.arange(0, self.N)*self.delta) for i in np.arange(0, self.N)])
-
-        # Randomly generate the intial color charge density using a gaussian distribution
-        self._colorChargeField = np.random.normal(scale=self.gaussianWidth, size=(self.gluonDOF, self.N, self.N))
-        self._colorChargeField *= protonGaussianCorrection
-        # Make sure we don't regenerate this field since it already exists on future calls
-        self._colorChargeFieldExists = True
-
-        return self._colorChargeField

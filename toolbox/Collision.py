@@ -1,7 +1,8 @@
+from .Wavefunction import Wavefunction
+
 import numpy as np
 from scipy.fft import ifft2, fft2
 
-from Wavefunctions import Wavefunction
 
 class Collision():
 
@@ -21,11 +22,19 @@ class Collision():
     def __init__(self, wavefunction1: Wavefunction, wavefunction2: Wavefunction):
         """
         Initialize a collision with two wavefunctions, presumably a nucleus and a proton. The first is expected to implement
-        the wilson line, though as long as only one of the wavefunctions has this property, it will detect the proper one
+        the wilson line, though as long as only one of the wavefunctions has this property, it will detect the proper one.
 
-        In the case that both wavefunctions implement the wilson line, the first (wavefunction1) will be used as such
+        In the case that both wavefunctions implement the wilson line, the first (wavefunction1) will be used as such.
 
-        In the case that neither implement the wilson line, this method will return an error
+        In the case that neither implement the wilson line, an exception will be raised.
+
+        Parameters
+        ----------
+        wavefunction1 : Wavefunction (or child)
+            The first wavefunction
+
+        wavefunction2 : Wavefunction (or child)
+            The second wavefunction
         """
 
         # Make sure that at least one has a wilson line
@@ -67,6 +76,16 @@ class Collision():
         self.numBins = int(self.kMax/self.binSize)
 
     def omega(self):
+        """
+        Calculate the field omega at each point on the lattice.
+
+        If the field already exists, it is simply returned and no calculation is done.
+
+        Returns
+        -------
+        numpy.array : shape=(2, 2, `colorCharges`**2 - 1, N, N)
+
+        """
 
         if self._omegaExists:
             return self._omega
@@ -93,7 +112,11 @@ class Collision():
 
 
     def omegaFFT(self):
+        """
+        Compute the fourier transform of the field omega on the lattice.
 
+        If the fft of the field already exists, it is simply returned and no calculation is done.
+        """
         if self._omegaFFTExists:
             return self._omegaFFT
 
@@ -107,7 +130,12 @@ class Collision():
 
 
     def momentaBins(self):
-        
+        """
+        Compute the range of momenta at which particles will be created based on the dimensions of the lattice.
+
+        If the bins already exist, they are simply returned and no calculation is done.
+        """
+
         if self._momentaBinsExists:
             return self._momentaBins
 
@@ -117,7 +145,11 @@ class Collision():
         return self._momentaBins
 
     def particlesProduced(self):
-
+        """
+        Compute the number of particles produced at each value of momentum in `momentaBins()`.
+        
+        If the calculation has already been done, the result is simply returned and is not repeated.
+        """
         if self._particlesProducedExists:
             return self._particlesProduced
 
