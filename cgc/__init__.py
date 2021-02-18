@@ -4,7 +4,7 @@ r"""
 This toolbox offers methods to calculate the number of particles and their momenta that are produced
 in color glass condensates.
 
-toolbox.Wavefunction
+cgc.Wavefunction
 --------------------
 
 Defines the base methods in what will later be the super class for both the proton and nucleus objects.
@@ -14,26 +14,26 @@ distribution, as well as solving the laplace equation for these densities to get
 The `Proton` class is defined here because it only trivially depends on the number of possible color
 charges, which the nuclei classes for various special unitary groups are defined separately (see below).
 
-toolbox.TwoColors
+cgc.TwoColors
 -----------------
 
 Defines the nucleus object for two possible color charges, where the calculation of the Wilson Line
 can be done using the closed form of the exponential of the Pauli matrices.
 
-toolbox.ThreeColors
+cgc.ThreeColors
 -------------------
 
 Defines the nucleus object for three possible color charges, where the calculation of the Wilson Line
 must be done using a numerical exponentiation method.
 
-toolbox.ArbColors
+cgc.ArbColors
 -----------------
 
 Defines the nucleus object for an arbitrary number of colors, with the exponential calcuation being
 done as it is with three colors above. The basis matrices are generated as the generalized
 Gell-Mann matrices.
 
-toolbox.Collision
+cgc.Collision
 -----------------
 
 Defines a collision object that takes in two `Wavefunctions` and calculates the properties of their collision.

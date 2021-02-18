@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1" />
 <meta name="generator" content="pdoc 0.9.2" />
-<title>toolbox API documentation</title>
+<title>cgc API documentation</title>
 <meta name="description" content="This toolbox offers methods to calculate the number of particles and their momenta that are produced
 in color glass condensates …" />
 <link rel="preload stylesheet" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/11.0.1/sanitize.min.css" integrity="sha256-PK9q560IAAa6WVRRh76LtCaI8pjTJ2z11v0miyNNjrs=" crossorigin>
@@ -21,30 +21,30 @@ in color glass condensates …" />
 <main>
 <article id="content">
 <header>
-<h1 class="title">Package <code>toolbox</code></h1>
+<h1 class="title">Package <code>cgc</code></h1>
 </header>
 <section id="section-intro">
 <p>This toolbox offers methods to calculate the number of particles and their momenta that are produced
 in color glass condensates.</p>
-<h2 id="toolboxwavefunction">toolbox.Wavefunction</h2>
+<h2 id="cgcwavefunction">cgc.Wavefunction</h2>
 <p>Defines the base methods in what will later be the super class for both the proton and nucleus objects.
 This class implements methods for generating a random color charge density according to a guassian
 distribution, as well as solving the laplace equation for these densities to get the gauge field.</p>
 <p>The <code>Proton</code> class is defined here because it only trivially depends on the number of possible color
 charges, which the nuclei classes for various special unitary groups are defined separately (see below).</p>
-<h2 id="toolboxtwocolors">toolbox.TwoColors</h2>
+<h2 id="cgctwocolors">cgc.TwoColors</h2>
 <p>Defines the nucleus object for two possible color charges, where the calculation of the Wilson Line
 can be done using the closed form of the exponential of the Pauli matrices.</p>
-<h2 id="toolboxthreecolors">toolbox.ThreeColors</h2>
+<h2 id="cgcthreecolors">cgc.ThreeColors</h2>
 <p>Defines the nucleus object for three possible color charges, where the calculation of the Wilson Line
 must be done using a numerical exponentiation method.</p>
-<h2 id="toolboxarbcolors">toolbox.ArbColors</h2>
+<h2 id="cgcarbcolors">cgc.ArbColors</h2>
 <p>Defines the nucleus object for an arbitrary number of colors, with the exponential calcuation being
 done as it is with three colors above. The basis matrices are generated as the generalized
 Gell-Mann matrices.</p>
-<h2 id="toolboxcollision">toolbox.Collision</h2>
+<h2 id="cgccollision">cgc.Collision</h2>
 <p>Defines a collision object that takes in two <code>Wavefunctions</code> and calculates the properties of their collision.
-At least one of the parameters must be a <code><a title="toolbox.Wavefunction" href="Wavefunction.html">toolbox.Wavefunction</a></code> that implements a calculation of the Wilson Line.</p>
+At least one of the parameters must be a <code><a title="cgc.Wavefunction" href="Wavefunction.html">cgc.Wavefunction</a></code> that implements a calculation of the Wilson Line.</p>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -54,7 +54,7 @@ At least one of the parameters must be a <code><a title="toolbox.Wavefunction" h
 This toolbox offers methods to calculate the number of particles and their momenta that are produced
 in color glass condensates.
 
-toolbox.Wavefunction
+cgc.Wavefunction
 --------------------
 
 Defines the base methods in what will later be the super class for both the proton and nucleus objects.
@@ -64,26 +64,26 @@ distribution, as well as solving the laplace equation for these densities to get
 The `Proton` class is defined here because it only trivially depends on the number of possible color
 charges, which the nuclei classes for various special unitary groups are defined separately (see below).
 
-toolbox.TwoColors
+cgc.TwoColors
 -----------------
 
 Defines the nucleus object for two possible color charges, where the calculation of the Wilson Line
 can be done using the closed form of the exponential of the Pauli matrices.
 
-toolbox.ThreeColors
+cgc.ThreeColors
 -------------------
 
 Defines the nucleus object for three possible color charges, where the calculation of the Wilson Line
 must be done using a numerical exponentiation method.
 
-toolbox.ArbColors
+cgc.ArbColors
 -----------------
 
 Defines the nucleus object for an arbitrary number of colors, with the exponential calcuation being
 done as it is with three colors above. The basis matrices are generated as the generalized
 Gell-Mann matrices.
 
-toolbox.Collision
+cgc.Collision
 -----------------
 
 Defines a collision object that takes in two `Wavefunctions` and calculates the properties of their collision.
@@ -102,23 +102,23 @@ from .ArbColors import Nucleus as Nucleus</code></pre>
 <section>
 <h2 class="section-title" id="header-submodules">Sub-modules</h2>
 <dl>
-<dt><code class="name"><a title="toolbox.ArbColors" href="ArbColors.html">toolbox.ArbColors</a></code></dt>
+<dt><code class="name"><a title="cgc.ArbColors" href="ArbColors.html">cgc.ArbColors</a></code></dt>
 <dd>
 <div class="desc"></div>
 </dd>
-<dt><code class="name"><a title="toolbox.Collision" href="Collision.html">toolbox.Collision</a></code></dt>
+<dt><code class="name"><a title="cgc.Collision" href="Collision.html">cgc.Collision</a></code></dt>
 <dd>
 <div class="desc"></div>
 </dd>
-<dt><code class="name"><a title="toolbox.ThreeColors" href="ThreeColors.html">toolbox.ThreeColors</a></code></dt>
+<dt><code class="name"><a title="cgc.ThreeColors" href="ThreeColors.html">cgc.ThreeColors</a></code></dt>
 <dd>
 <div class="desc"></div>
 </dd>
-<dt><code class="name"><a title="toolbox.TwoColors" href="TwoColors.html">toolbox.TwoColors</a></code></dt>
+<dt><code class="name"><a title="cgc.TwoColors" href="TwoColors.html">cgc.TwoColors</a></code></dt>
 <dd>
 <div class="desc"></div>
 </dd>
-<dt><code class="name"><a title="toolbox.Wavefunction" href="Wavefunction.html">toolbox.Wavefunction</a></code></dt>
+<dt><code class="name"><a title="cgc.Wavefunction" href="Wavefunction.html">cgc.Wavefunction</a></code></dt>
 <dd>
 <div class="desc"></div>
 </dd>
@@ -135,21 +135,21 @@ from .ArbColors import Nucleus as Nucleus</code></pre>
 <h1>Index</h1>
 <div class="toc">
 <ul>
-<li><a href="#toolboxwavefunction">toolbox.Wavefunction</a></li>
-<li><a href="#toolboxtwocolors">toolbox.TwoColors</a></li>
-<li><a href="#toolboxthreecolors">toolbox.ThreeColors</a></li>
-<li><a href="#toolboxarbcolors">toolbox.ArbColors</a></li>
-<li><a href="#toolboxcollision">toolbox.Collision</a></li>
+<li><a href="#cgcwavefunction">cgc.Wavefunction</a></li>
+<li><a href="#cgctwocolors">cgc.TwoColors</a></li>
+<li><a href="#cgcthreecolors">cgc.ThreeColors</a></li>
+<li><a href="#cgcarbcolors">cgc.ArbColors</a></li>
+<li><a href="#cgccollision">cgc.Collision</a></li>
 </ul>
 </div>
 <ul id="index">
 <li><h3><a href="#header-submodules">Sub-modules</a></h3>
 <ul>
-<li><code><a title="toolbox.ArbColors" href="ArbColors.html">toolbox.ArbColors</a></code></li>
-<li><code><a title="toolbox.Collision" href="Collision.html">toolbox.Collision</a></code></li>
-<li><code><a title="toolbox.ThreeColors" href="ThreeColors.html">toolbox.ThreeColors</a></code></li>
-<li><code><a title="toolbox.TwoColors" href="TwoColors.html">toolbox.TwoColors</a></code></li>
-<li><code><a title="toolbox.Wavefunction" href="Wavefunction.html">toolbox.Wavefunction</a></code></li>
+<li><code><a title="cgc.ArbColors" href="ArbColors.html">cgc.ArbColors</a></code></li>
+<li><code><a title="cgc.Collision" href="Collision.html">cgc.Collision</a></code></li>
+<li><code><a title="cgc.ThreeColors" href="ThreeColors.html">cgc.ThreeColors</a></code></li>
+<li><code><a title="cgc.TwoColors" href="TwoColors.html">cgc.TwoColors</a></code></li>
+<li><code><a title="cgc.Wavefunction" href="Wavefunction.html">cgc.Wavefunction</a></code></li>
 </ul>
 </li>
 </ul>
