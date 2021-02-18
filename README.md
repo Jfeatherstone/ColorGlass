@@ -1,49 +1,20 @@
-# Particle Production in Relativistic Collisions
+# Color Glass Condensate Simulations
 
-This is a toolbox to calculate the particles, grouped by their momenta, that are created during relativistic gluon interactions involving a nucleus and a proton.
+This is a toolbox to model color glass condensates.
 
-## Class structure
+## Documentation
 
-Currently, the generic class that is then extended for the objects involved in the collision is `Wavefunction`. This class implements just a basic color charge density and gauge field. This class can be implemented for any number of gluon degrees of freedom, meaning it will work for either 2 or 3 color charges.
+You can access the documentation for the project [here](https://jfeatherstone.github.io/ParticleProduction/docs/index.html).
 
-The only part of the calculation that greatly changes upon using 2 vs. 3 color charges is the calculation of the Wilson line, so this method is unimplemented here.
+## Optimization
 
-For a two color system, the `TwoColors.py` file defines a `Nucleus` and `Proton`, where the former implements the Wilson line calculations, while the latter reimplements the color charge generation to weight it by a centered Gaussian field.
-
-A three color system equivalent is in the process of being implemented.
-
-Finally, a `Collision` can be created from two `Wavefunction` (or child) classes, regardless of the number of color charges. At least one of the classes passed to this constructor must implement the `wilsonLine()` method, otherwise an error will be thrown.
-
-## Attributes that can be calculated for each object:
-
-### Wavefunction (generic)
-
-- colorChargeField()
-- gaugeField()
-
-### Nucleus
-
-- All Wavefunction attributes
-- wilsonLine()
-- adjointWilsonLine()
-
-### Proton
-
-- All Wavefunction attributes
-
-
-### Collision
-
-- omega()
-- omegaFFT()
-- momentaBins()
-- particlesProduced()
+More work needs to be done on the optimization of individual methods, but most calculations are done with efficiency in mind.
 
 All calculation methods are properly chained, which means the following two pieces of code perform the same number of calculations:
 
 ```
-nucleus = Nucleus(N, delta, mu)
-proton = Proton(N, delta, mu, radius)
+nucleus = Nucleus(2, N, delta, mu)
+proton = Proton(2, N, delta, mu, radius)
 col = Collision(nucleus, proton)
 
 nucleus.colorChargeField()
@@ -63,8 +34,8 @@ plt.plot(col.momentaBins(), col.particlesProduced())
 ```
 
 ```
-nucleus = Nucleus(N, delta, mu)
-proton = Proton(N, delta, mu, radius)
+nucleus = Nucleus(2, N, delta, mu)
+proton = Proton(2, N, delta, mu, radius)
 col = Collision(nucleus, proton)
 
 plt.plot(col.momentaBins(), col.particlesProduced())
