@@ -44,6 +44,8 @@ At least one of the parameters must be a `Wavefunction` that implements a calcul
 from .Wavefunction import Wavefunction, Proton
 from .Collision import Collision
 
-from .TwoColors import Nucleus as Nucleus2
-from .ThreeColors import Nucleus as Nucleus3
+# No longer include the explicit SU(n) representations, since the arbitrary one
+# works very well
+#from .TwoColors import Nucleus as Nucleus2
+#from .ThreeColors import Nucleus as Nucleus3
 from .ArbColors import Nucleus as Nucleus
