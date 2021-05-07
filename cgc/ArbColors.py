@@ -51,7 +51,7 @@ def gen_gellmann(j, k, d):
                                                      else 0 + 0.j)
                                                for n in range(1, d + 1)])
     else:
-        gjkd = np.diag([1 + 0.j for n in range(1, d + 1)])
+        gjkd = np.diag([1 + 0.j for n in range(1, d + 1)])*np.sqrt(2/d)
 
     return gjkd
 
@@ -74,7 +74,7 @@ def get_basis(d):
 
     """
 
-    return [gen_gellmann(j, k, d) for j, k in product(range(1, d + 1), repeat=2)]
+    return [gen_gellmann(j, k, d)/2 for j, k in product(range(1, d + 1), repeat=2)]
 
 
 class Nucleus(Wavefunction):
@@ -170,8 +170,10 @@ class Nucleus(Wavefunction):
         # This expression was acquired by 
         def AHat_mn(m, n, chargeFieldFFT_mn):
             numerator = -self.delta**2 * self.g * chargeFieldFFT_mn
-            denominator = 2 * (np.cos(2*np.pi*m*self.delta/self.length) + np.cos(2*np.pi*n*self.delta/self.length) - 2 - (self.M * self.delta)**2 / 2)
+            denominator = 2  * self.N**2 * (np.cos(2*np.pi*m*self.delta/self.length) + np.cos(2*np.pi*n*self.delta/self.length) - 2 - (self.M * self.delta)**2 / 2)
+            # Should never happen:
             if denominator == 0:
+                raise 'Error in poison equation: IR reguilator is 0'
                 return 0
             return numerator / denominator
         vec_AHat_mn = np.vectorize(AHat_mn)
@@ -214,12 +216,14 @@ class Nucleus(Wavefunction):
 
         # We now combine all of the longitudinal layers into the single wilson line
         # The path ordered exponential becomes just a product of exponentials for each layer
-        for l in range(self.Ny):
-            for i in range(self.N):
-                for j in range(self.N):
+        
+        for i in range(self.N):
+            for j in range(self.N):
+                self._wilsonLine[i,j] = np.identity(self.colorCharges, dtype='complex')
+                for l in range(self.Ny):
                     # Numerical form for SU(n)
                     # Note that identity is last in the _basis matrix set, so we no longer need to +1
-                    self._wilsonLine[i,j] *= expm(-1.j*sum([self._gaugeField[l,k,i,j]*self._basis[k] for k in range(self.gluonDOF)]))
+                    self._wilsonLine[i,j] = np.dot(self._wilsonLine[i,j], expm(-1.j*sum([self._gaugeField[l,k,i,j]*self._basis[k] for k in range(self.gluonDOF)])))
 
         self._wilsonLineExists = True
 
@@ -238,16 +242,15 @@ class Nucleus(Wavefunction):
         if not self._wilsonLineExists:
             self.wilsonLine()
 
-        self._adjointWilsonLine = np.zeros([self.gluonDOF+1, self.gluonDOF+1, self.N, self.N], dtype='complex')
+        self._adjointWilsonLine = np.zeros([self.gluonDOF, self.gluonDOF, self.N, self.N], dtype='complex')
 
-        for a in range(self.gluonDOF+1):
-            for b in range(self.gluonDOF+1):
+        for a in range(self.gluonDOF):
+            for b in range(self.gluonDOF):
                 for i in range(self.N):
                     for j in range(self.N):
-                        #V = sum([self._wilsonLine[k,i,j]*self._pauli[k] for k in range(self.gluonDOF+1)])
                         V = self._wilsonLine[i,j]
                         Vdag = np.conjugate(np.transpose(V))
-                        self._adjointWilsonLine[a,b,i,j] = .5 * np.trace(np.dot(np.dot(self._basis[a], V), np.dot(self._basis[b], Vdag)))
+                        self._adjointWilsonLine[a,b,i,j] = 2 * np.trace(np.dot(np.dot(self._basis[a], V), np.dot(self._basis[b], Vdag)))
 
 
         self._adjointWilsonLineExists = True

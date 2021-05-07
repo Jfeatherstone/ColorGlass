@@ -68,7 +68,8 @@ class Wavefunction():
 
     def colorChargeField(self):
         """
-        Generates the color charge density field according to a gaussian distribution.
+        Generates the color charge density 2-d field according to a gaussian distribution.
+        The width of the gaussian is given by \mu and due to the discretization 1/\Delta; 
 
         If the field already exists, it is simply returned and no calculation is done.
         """
@@ -104,7 +105,7 @@ class Wavefunction():
         # This expression was acquired by 
         def AHat_mn(m, n, chargeFieldFFT_mn):
             numerator = -self.delta**2 * self.g * chargeFieldFFT_mn
-            denominator = 2 * (np.cos(2*np.pi*m*self.delta/self.length) + np.cos(2*np.pi*n*self.delta/self.length) - 2 - (self.M * self.delta)**2 / 2)
+            denominator = 2 * self.N**2 *(np.cos(2*np.pi*m*self.delta/self.length) + np.cos(2*np.pi*n*self.delta/self.length) - 2 - (self.M * self.delta)**2 / 2)
             if denominator == 0:
                 return 0
             return numerator / denominator
