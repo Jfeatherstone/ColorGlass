@@ -24,8 +24,8 @@ class Wavefunction():
     def __init__(self, colorCharges, N, delta, mu, fftNormalization=None, M=.5, g=1):
         r"""
 
-        Base wavefunction class inplementing a generic color charge field and gauge field
-        for a system with an arbitrary number of colors.
+        Base wavefunction class inplementing a generic color charge and gauge field
+        in an arbitrary special unitary group, \(SU\)(`colorCharges`).
 
         Parameters
         ----------
@@ -41,14 +41,14 @@ class Wavefunction():
         mu : positive float
             The scaling for the random gaussian distribution that generates the color charge density
 
-        fftNormalization : None | "backward" | "ortho" | "forward"
+        fftNormalization : None | "backward" | "ortho" | "forward" (default=None)
             Normalization procedure used when computing fourier transforms; see [scipy documentation](https://docs.scipy.org/doc/scipy/reference/generated/scipy.fft.fft.html) for more information
 
-        M : float
-            Experimental parameter in the laplace equation for the gauge field
+        M : float (default=.5)
+            Infrared regulator parameter to regularize the Poisson equation for the gauge field.
 
-        g : float
-            Parameter in the laplace equation for the gauge field
+        g : float (default=1)
+            Parameter in the Poisson equation for the gauge field
         """
 
         self.N = N
@@ -60,6 +60,11 @@ class Wavefunction():
         self.M = M
         self.g = g
 
+        # Precompute squares of values, since they are used often
+        self.N2 = N**2
+        self.M2 = M**2
+        self.delta2 = delta**2
+
         # Calculate some simple system constants
         self.length = self.N * self.delta
         self.gaussianWidth = self.mu / self.delta
@@ -67,9 +72,9 @@ class Wavefunction():
 
 
     def colorChargeField(self):
-        """
+        r"""
         Generates the color charge density 2-d field according to a gaussian distribution.
-        The width of the gaussian is given by \mu and due to the discretization 1/\Delta; 
+        The width of the gaussian is given by `mu` divided by the discretization `delta`. 
 
         If the field already exists, it is simply returned and no calculation is done.
         """
@@ -85,9 +90,13 @@ class Wavefunction():
 
 
     def gaugeField(self):
-        """
+        r"""
         Calculates the gauge field for the given color charge distribution by solving the (modified)
-        Poisson equation involving the color charge field using Fourier method.
+        Poisson equation involving the color charge field
+
+        $$g \frac{1  } {\partial_\perp^2 - m^2 } \rho_a(i^-, \vec {i}_\perp )$$
+
+        via Fourier method.
 
         If the field already exists, it is simply returned and no calculation is done.
         """
@@ -102,10 +111,9 @@ class Wavefunction():
 
         # This function calculates the individual elements of the gauge field in fourier space,
         # which we can then ifft back to get the actual gauge field
-        # This expression was acquired by 
         def AHat_mn(m, n, chargeFieldFFT_mn):
-            numerator = -self.delta**2 * self.g * chargeFieldFFT_mn
-            denominator = 2 * self.N**2 *(np.cos(2*np.pi*m*self.delta/self.length) + np.cos(2*np.pi*n*self.delta/self.length) - 2 - (self.M * self.delta)**2 / 2)
+            numerator = -self.delta2 * self.g * chargeFieldFFT_mn
+            denominator = 2 * self.N2 *(np.cos(2*np.pi*m*self.delta/self.length) + np.cos(2*np.pi*n*self.delta/self.length) - 2 - (self.M2 * self.delta2) / 2)
             if denominator == 0:
                 return 0
             return numerator / denominator
@@ -131,14 +139,14 @@ class Wavefunction():
 
 class Proton(Wavefunction):
     """
+    Dilute object to be used in an instance of `cgc.Collision.Collision`.
+
     Only real difference between the super class is that the color charge field is scaled by a centered gaussian
     with a width equal to `radius`.
     """
 
     def __init__(self, colorCharges, N, delta, mu, radius, fftNormalization=None, M=.5, g=1):
         """
-        Wrapper for Wavefunction.__init__ that stores the radius parameter for use in generating the
-        color charge field.
 
         Parameters
         ----------
@@ -157,14 +165,14 @@ class Proton(Wavefunction):
         radius : positive float
             The scaling parameter for the gaussian factor that modifies the color charge density
 
-        fftNormalization : None | "backward" | "ortho" | "forward"
+        fftNormalization : None | "backward" | "ortho" | "forward" (default=None)
             Normalization procedure used when computing fourier transforms; see [scipy documentation](https://docs.scipy.org/doc/scipy/reference/generated/scipy.fft.fft.html) for more information
 
-        M : float
-            Experimental parameter in the laplace equation for the gauge field
+        M : float (default=.5)
+            Infrared regulator parameter to regularize the Poisson equation for the gauge field.
 
-        g : float
-            Parameter in the laplace equation for the gauge field
+        g : float (default=1)
+            Parameter in the Poisson equation for the gauge field
 
         """
 
@@ -172,9 +180,12 @@ class Proton(Wavefunction):
         self.radius = radius
 
     def colorChargeField(self):
-        """
+        r"""
         Generates the color charge density field according to a gaussian distribution, which decays according
-        to another gaussian distribution.
+        to a centered (different) gaussian distribution. That is, the field \(\rho\) satisfies:
+
+        $$ \langle \rho_{a}^{(p)}(\vec x_{\perp} ) \rho_{b}^{(p)}(\vec y_{\perp} ) \rangle = g^2\mu_p^2 ~\exp\left( -\frac{\vec x_{\perp}^{2}}{2R_{p}^2} \right) ~\delta_{ab}~\delta^{(2)}(\vec x_{\perp}-\vec y_{\perp}) $$
+
 
         If the field already exists, it is simply returned and no calculation is done.
         """

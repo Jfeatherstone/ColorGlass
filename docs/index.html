@@ -5,8 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1" />
 <meta name="generator" content="pdoc 0.9.2" />
 <title>cgc API documentation</title>
-<meta name="description" content="This toolbox offers methods to calculate the number of particles and their momenta that are produced
-in color glass condensates …" />
+<meta name="description" content="This toolbox offers the funtionality to simulate color glass condensates in the dilute-dense approximation …" />
 <link rel="preload stylesheet" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/11.0.1/sanitize.min.css" integrity="sha256-PK9q560IAAa6WVRRh76LtCaI8pjTJ2z11v0miyNNjrs=" crossorigin>
 <link rel="preload stylesheet" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/11.0.1/typography.min.css" integrity="sha256-7l/o7C8jubJiy74VsKTidCy1yBkRtiUGbVkYBylBqUg=" crossorigin>
 <link rel="stylesheet preload" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/10.1.1/styles/github.min.css" crossorigin>
@@ -24,78 +23,190 @@ in color glass condensates …" />
 <h1 class="title">Package <code>cgc</code></h1>
 </header>
 <section id="section-intro">
-<p>This toolbox offers methods to calculate the number of particles and their momenta that are produced
-in color glass condensates.</p>
-<h2 id="cgcwavefunction">cgc.Wavefunction</h2>
+<p>This toolbox offers the funtionality to simulate color glass condensates in the dilute-dense approximation.</p>
+<h2 id="overview-of-classes"><strong>Overview of Classes</strong></h2>
+<h3 id="cgcwavefunction"><code><a title="cgc.Wavefunction" href="Wavefunction.html">cgc.Wavefunction</a></code></h3>
 <p>Defines the base methods in what will later be the super class for both the proton and nucleus objects.
 This class implements methods for generating a random color charge density according to a guassian
 distribution, as well as solving the laplace equation for these densities to get the gauge field.</p>
-<p>The <code>Proton</code> class is defined here because it only trivially depends on the number of possible color
-charges, which the nuclei classes for various special unitary groups are defined separately (see below).</p>
-<h2 id="cgctwocolors">cgc.TwoColors</h2>
-<p>Defines the nucleus object for two possible color charges, where the calculation of the Wilson Line
-can be done using the closed form of the exponential of the Pauli matrices.</p>
-<h2 id="cgcthreecolors">cgc.ThreeColors</h2>
-<p>Defines the nucleus object for three possible color charges, where the calculation of the Wilson Line
-must be done using a numerical exponentiation method.</p>
-<h2 id="cgcarbcolors">cgc.ArbColors</h2>
+<p>The <code><a title="cgc.Wavefunction.Proton" href="Wavefunction.html#cgc.Wavefunction.Proton">Proton</a></code> class is defined here because it only trivially depends on the number of possible color
+charges, whereas the nuclei class has a more involved dependence (see below).</p>
+<h3 id="cgcarbcolors"><code><a title="cgc.ArbColors" href="ArbColors.html">cgc.ArbColors</a></code></h3>
 <p>Defines the nucleus object for an arbitrary number of colors, with the exponential calcuation being
 done as it is with three colors above. The basis matrices are generated as the generalized
 Gell-Mann matrices.</p>
-<h2 id="cgccollision">cgc.Collision</h2>
-<p>Defines a collision object that takes in two <code>Wavefunctions</code> and calculates the properties of their collision.
-At least one of the parameters must be a <code><a title="cgc.Wavefunction" href="Wavefunction.html">cgc.Wavefunction</a></code> that implements a calculation of the Wilson Line.</p>
+<h3 id="cgccollision"><code><a title="cgc.Collision" href="Collision.html">cgc.Collision</a></code></h3>
+<p>Defines a collision object that takes in two <code><a title="cgc.Wavefunction.Wavefunction" href="Wavefunction.html#cgc.Wavefunction.Wavefunction">Wavefunction</a></code> and calculates the properties of their collision.
+At least one of the parameters must be a <code><a title="cgc.Wavefunction.Wavefunction" href="Wavefunction.html#cgc.Wavefunction.Wavefunction">Wavefunction</a></code> that implements a calculation of the Wilson Line
+(eg. <code><a title="cgc.ArbColors.Nucleus" href="ArbColors.html#cgc.ArbColors.Nucleus">Nucleus</a></code>)</p>
+<h3 id="deprecated-classes"><strong>Deprecated Classes</strong></h3>
+<p>As a test of the toolbox functionality, the <span><span class="MathJax_Preview">SU(2)</span><script type="math/tex">SU(2)</script></span> and <span><span class="MathJax_Preview">SU(3)</span><script type="math/tex">SU(3)</script></span> cases have been explicitly defined, where the former
+is done using a closed form the exponential of a matrix. The latter is simply a less generalized version of the
+arbitrary color case above, in that it uses a numerical form for diagonalizing and computing the exponential
+of a matrix when calculating the Wilson Line.</p>
+<p>In practical applications, it is easier to simply use the <code><a title="cgc.ArbColors.Nucleus" href="ArbColors.html#cgc.ArbColors.Nucleus">Nucleus</a></code> and <code><a title="cgc.Wavefunction.Proton" href="Wavefunction.html#cgc.Wavefunction.Proton">Proton</a></code> classes for everything,
+though the classes below are able to interface with the ones above.</p>
+<h3 id="cgctwocolors"><code><a title="cgc.TwoColors" href="TwoColors.html">cgc.TwoColors</a></code></h3>
+<p>Defines the nucleus object for two possible color charges, where the calculation of the Wilson Line
+can be done using the closed form of the exponential of the Pauli matrices.</p>
+<h3 id="cgcthreecolors"><code><a title="cgc.ThreeColors" href="ThreeColors.html">cgc.ThreeColors</a></code></h3>
+<p>Defines the nucleus object for three possible color charges, where the calculation of the Wilson Line
+must be done using a numerical exponentiation method.</p>
+<h2 id="usage-examples"><strong>Usage Examples</strong></h2>
+<p>The simplest usage example would be to create nucleus and proton objects to calculate the momenta of particles produced:</p>
+<p>First, import the toolbox and whatever other packages you will use for post-processing</p>
+<pre><code>import cgc
+import matplotlib.pyplot as plt
+</code></pre>
+<p>Define constants for the dilute and dense objects.</p>
+<pre><code>N = 128         # Number of lattice sites
+delta = .1      # Inter-lattice spacing
+mu = 2          # Gaussian distribution width for color field generation
+radius = 1      # Radius of dilute proton
+</code></pre>
+<p>Create the dilute and dense objects for <span><span class="MathJax_Preview">SU(3)</span><script type="math/tex">SU(3)</script></span>, as well as a collision between them. Note that no actual calculations are done in this step;
+rather, calculations are only performed as they are deemed necessary (ie. when a particular quantity is called)</p>
+<pre><code>nucelus = cgc.Nucleus(3, N, delta, mu)
+proton = cgc.Proton(3, N, delta, mu, radius)
+
+col = cgc.Collision(nucleus, proton)
+</code></pre>
+<p>From here, quantities can be generated from calling any of the three objects above.</p>
+<pre><code>plt.plot(col.momentaBins(), col.particlesProduced())
+</code></pre>
+<details>
+<summary>Full Code</summary>
+<p>
+<pre><code>    import cgc
+    import matplotlib.pyplot as plt
+
+    N = 128         # Number of lattice sites
+    delta = .1      # Inter-lattice spacing
+    mu = 2          # Gaussian distribution width for color field generation
+    radius = 1      # Radius of dilute proton
+
+    nucelus = cgc.Nucleus(3, N, delta, mu)
+    proton = cgc.Proton(3, N, delta, mu, radius)
+
+    col = cgc.Collision(nucleus, proton)
+
+    plt.plot(col.momentaBins(), col.particlesProduced())
+</code></pre>
+</p>
+</details>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">r&#34;&#34;&#34;
 
-This toolbox offers methods to calculate the number of particles and their momenta that are produced
-in color glass condensates.
+This toolbox offers the funtionality to simulate color glass condensates in the dilute-dense approximation.
 
-cgc.Wavefunction
---------------------
+## **Overview of Classes**
+
+### `Wavefunction`
 
 Defines the base methods in what will later be the super class for both the proton and nucleus objects.
 This class implements methods for generating a random color charge density according to a guassian
 distribution, as well as solving the laplace equation for these densities to get the gauge field.
 
-The `Proton` class is defined here because it only trivially depends on the number of possible color
-charges, which the nuclei classes for various special unitary groups are defined separately (see below).
+The `Wavefunction.Proton` class is defined here because it only trivially depends on the number of possible color
+charges, whereas the nuclei class has a more involved dependence (see below).
 
-cgc.TwoColors
------------------
-
-Defines the nucleus object for two possible color charges, where the calculation of the Wilson Line
-can be done using the closed form of the exponential of the Pauli matrices.
-
-cgc.ThreeColors
--------------------
-
-Defines the nucleus object for three possible color charges, where the calculation of the Wilson Line
-must be done using a numerical exponentiation method.
-
-cgc.ArbColors
------------------
+### `ArbColors`
 
 Defines the nucleus object for an arbitrary number of colors, with the exponential calcuation being
 done as it is with three colors above. The basis matrices are generated as the generalized
 Gell-Mann matrices.
 
-cgc.Collision
------------------
+### `Collision`
 
-Defines a collision object that takes in two `Wavefunctions` and calculates the properties of their collision.
-At least one of the parameters must be a `Wavefunction` that implements a calculation of the Wilson Line.
+Defines a collision object that takes in two `Wavefunction.Wavefunction` and calculates the properties of their collision.
+At least one of the parameters must be a `Wavefunction.Wavefunction` that implements a calculation of the Wilson Line
+(eg. `ArbColors.Nucleus`)
+
+### **Deprecated Classes**
+
+As a test of the toolbox functionality, the \(SU(2)\) and \(SU(3)\) cases have been explicitly defined, where the former
+is done using a closed form the exponential of a matrix. The latter is simply a less generalized version of the
+arbitrary color case above, in that it uses a numerical form for diagonalizing and computing the exponential
+of a matrix when calculating the Wilson Line.
+
+In practical applications, it is easier to simply use the `ArbColors.Nucleus` and `Wavefunction.Proton` classes for everything,
+though the classes below are able to interface with the ones above.
+
+### `TwoColors`
+
+Defines the nucleus object for two possible color charges, where the calculation of the Wilson Line
+can be done using the closed form of the exponential of the Pauli matrices.
+
+### `ThreeColors`
+
+Defines the nucleus object for three possible color charges, where the calculation of the Wilson Line
+must be done using a numerical exponentiation method.
+
+
+## **Usage Examples**
+
+The simplest usage example would be to create nucleus and proton objects to calculate the momenta of particles produced:
+
+First, import the toolbox and whatever other packages you will use for post-processing
+
+    import cgc
+    import matplotlib.pyplot as plt
+
+Define constants for the dilute and dense objects.
+
+    N = 128         # Number of lattice sites
+    delta = .1      # Inter-lattice spacing
+    mu = 2          # Gaussian distribution width for color field generation
+    radius = 1      # Radius of dilute proton
+
+Create the dilute and dense objects for \(SU(3)\), as well as a collision between them. Note that no actual calculations are done in this step;
+rather, calculations are only performed as they are deemed necessary (ie. when a particular quantity is called)
+
+    nucelus = cgc.Nucleus(3, N, delta, mu)
+    proton = cgc.Proton(3, N, delta, mu, radius)
+
+    col = cgc.Collision(nucleus, proton)
+
+From here, quantities can be generated from calling any of the three objects above.
+
+    plt.plot(col.momentaBins(), col.particlesProduced())
+
+&lt;details&gt;
+&lt;summary&gt;Full Code&lt;/summary&gt;
+&lt;p&gt;
+
+```
+    import cgc
+    import matplotlib.pyplot as plt
+
+    N = 128         # Number of lattice sites
+    delta = .1      # Inter-lattice spacing
+    mu = 2          # Gaussian distribution width for color field generation
+    radius = 1      # Radius of dilute proton
+
+    nucelus = cgc.Nucleus(3, N, delta, mu)
+    proton = cgc.Proton(3, N, delta, mu, radius)
+
+    col = cgc.Collision(nucleus, proton)
+
+    plt.plot(col.momentaBins(), col.particlesProduced())
+```
+
+&lt;/p&gt;
+&lt;/details&gt;
 
 &#34;&#34;&#34;
 
 from .Wavefunction import Wavefunction, Proton
 from .Collision import Collision
 
-from .TwoColors import Nucleus as Nucleus2
-from .ThreeColors import Nucleus as Nucleus3
+# No longer include the explicit SU(n) representations, since the arbitrary one
+# works very well
+#from .TwoColors import Nucleus as Nucleus2
+#from .ThreeColors import Nucleus as Nucleus3
 from .ArbColors import Nucleus as Nucleus</code></pre>
 </details>
 </section>
@@ -135,11 +246,16 @@ from .ArbColors import Nucleus as Nucleus</code></pre>
 <h1>Index</h1>
 <div class="toc">
 <ul>
-<li><a href="#cgcwavefunction">cgc.Wavefunction</a></li>
-<li><a href="#cgctwocolors">cgc.TwoColors</a></li>
-<li><a href="#cgcthreecolors">cgc.ThreeColors</a></li>
-<li><a href="#cgcarbcolors">cgc.ArbColors</a></li>
-<li><a href="#cgccollision">cgc.Collision</a></li>
+<li><a href="#overview-of-classes">Overview of Classes</a><ul>
+<li><a href="#wavefunction">Wavefunction</a></li>
+<li><a href="#arbcolors">ArbColors</a></li>
+<li><a href="#collision">Collision</a></li>
+<li><a href="#deprecated-classes">Deprecated Classes</a></li>
+<li><a href="#twocolors">TwoColors</a></li>
+<li><a href="#threecolors">ThreeColors</a></li>
+</ul>
+</li>
+<li><a href="#usage-examples">Usage Examples</a></li>
 </ul>
 </div>
 <ul id="index">

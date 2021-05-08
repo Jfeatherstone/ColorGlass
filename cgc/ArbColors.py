@@ -16,10 +16,13 @@ originally made by Jonathan Gross
 """
 
 def gen_gellmann(j, k, d):
-    r"""Returns a generalized Gell-Mann matrix of dimension d according to the
-    convention in *Bloch Vectors for Qubits* by Bertlmann and Krammer (2008)
+    r"""
+    Returns a generalized Gell-Mann matrix of dimension d according to Bertlmann & Krammer (2008).
 
     Adapted from Jonathan Gross's [pysme library](https://github.com/CQuIC/pysme/blob/master/src/pysme/gellmann.py).
+
+    For generation of all generalized Gell-Mann matrices for a given dimension, see `cgc.ArbColors.get_basis`.
+
 
     Parameters
     ----------
@@ -35,6 +38,10 @@ def gen_gellmann(j, k, d):
     numpy.array
         A genereralized Gell-Mann matrix
 
+    References
+    ----------
+
+    Bertlmann, R. A., & Krammer, P. (2008). Bloch vectors for qudits. Journal of Physics A: Mathematical and Theoretical, 41(23), 235303. [10.1088/1751-8113/41/23/235303](https://doi.org/10.1088/1751-8113/41/23/235303)
     """
 
     if j > k:
@@ -56,21 +63,27 @@ def gen_gellmann(j, k, d):
     return gjkd
 
 def get_basis(d):
-    r"""Return a Hermitian and traceless set of basis matrices for SU(d), as well
-    as the identity.
+    r"""Return a Hermitian and traceless set of basis matrices for \(SU(d)\), as well
+    as the identity. The former matrices satisfy:
 
-    The basis is made up of d^2 - 1 generalized Gell-Mann matrices, and then the identity
+    The basis is made up of \(d^2 - 1\) generalized Gell-Mann matrices, and then the identity
     as the last matrix.
+
+    $$ tr( t^a t^b) = \frac{1}{2} \delta_{ab} $$
+
+    For individual generation information, see `cgc.ArbColors.gen_gellmann`
 
     Parameters
     ----------
+
     d : positive integer
         The dimension of the Hilbert space
 
     Returns
     -------
-    list of numpy.array
-        The basis
+
+    list of numpy.ndarray
+        The basis matrices
 
     """
 
@@ -88,53 +101,57 @@ class Nucleus(Wavefunction):
     _wilsonLineExists = False
     _adjointWilsonLineExists = False
 
-    def __init__(self, colorCharges, N, delta, mu, fftNormalization=None, M=.5, g=1, longitudinalLayers=100):
+    def __init__(self, colorCharges, N, delta, mu, fftNormalization=None, M=.5, g=1, Ny=100):
         r"""
-        Extension of Wavefunction that implements the calculation of the Wilson Line.
+        Dense object to be used in an instance of `cgc.Collision.Collision`.
 
-        Constructor
-        -----------
-
-        Wrapper for `super.__init__` that also creates the appropriate basis for the special
-        unitary group SU(`colorCharges`)
+        Implements calculation of the Wilson Line using the generalized basis matrix set.
 
         Parameters
         ----------
+
         colorCharges : positive integer
-            The number of possible color charges; also the dimensionality of the special unitary group
+            The number of possible color charges; also the dimensionality of the special unitary group.
 
         N : positive integer
-            The size of the square lattice to simulate
+            The size of the square lattice to simulate.
 
         delta : positive float
-            The distance between adjacent lattice sites
+            The distance between adjacent lattice sites.
 
         mu : positive float
-            The scaling for the random gaussian distribution that generates the color charge density
+            The scaling for the random gaussian distribution that generates the color charge density.
 
-        fftNormalization : None | "backward" | "ortho" | "forward"
-            Normalization procedure used when computing fourier transforms; see [scipy documentation](https://docs.scipy.org/doc/scipy/reference/generated/scipy.fft.fft.html) for more information
+        fftNormalization : None | "backward" | "ortho" | "forward" (default=None)
+            Normalization procedure used when computing fourier transforms; see [scipy documentation](https://docs.scipy.org/doc/scipy/reference/generated/scipy.fft.fft.html) for more information.
 
-        M : float
-            Experimental parameter in the laplace equation for the gauge field
+        M : float (default=.5)
+            Infrared regulator parameter to regularize the Poisson equation for the gauge field.
 
-        g : float
-            Parameter in the laplace equation for the gauge field
+        g : float (default=1)
+            Parameter in the Poisson equation for the gauge field.
+
+        Ny : positive integer (default=100)
+            The longitudinal extent (in layers) of the nucleus object.
 
         """
 
         super().__init__(colorCharges, N, delta, mu, fftNormalization, M, g) # Super constructor
         self._basis = get_basis(colorCharges)
-        self.Ny = longitudinalLayers
+        self.Ny = Ny
+
         # Modify the gaussian width to account for the multiple longitudinal layers
         self.gaussianWidth = self.mu / self.delta / np.sqrt(self.Ny)
 
 
     def colorChargeField(self):
-        """
+        r"""
         Generates the color charge density field according to a gaussian distribution. Differs
         from super class implementation in that it generates the numerous fields according
-        to `longitudinalLayers`.
+        to `Ny`. That is, the field \(\rho\) satisfies:
+
+        $$ \langle \rho_{a}^{(t)}(i^-,\vec i_{\perp}) \rho_{b}^{(t)}({j^-},\vec j_{\perp}) \rangle = g^2\mu_t^2 \frac{ 1 }{N_y \Delta^2}  ~\delta_{ab}~\delta_{i_{\perp,1}\ j_{\perp,1}}~\delta_{i_{\perp,2} \ j_{\perp,2}} ~\delta_{i^- \ {j^-}} $$ 
+
 
         If the field already exists, it is simply returned and no calculation is done.
         """
@@ -150,12 +167,17 @@ class Nucleus(Wavefunction):
 
 
     def gaugeField(self):
-        """
-        Calculates the gauge field for the given color charge distribution by solving the (modified)
-        Poisson equation involving the color charge field using Fourier method.
+        r"""
+        Calculates the gauge field for all longitudinal layers and charge distributions by solving the (modified)
+        Poisson equation involving the color charge field
+
+        $$g \frac{1  } {\partial_\perp^2 - m^2 } \rho_a(i^-, \vec {i}_\perp )$$
+
+        via Fourier method.
 
         If the field already exists, it is simply returned and no calculation is done.
         """
+
         if self._gaugeFieldExists:
             return self._gaugeField
 
@@ -169,8 +191,8 @@ class Nucleus(Wavefunction):
         # which we can then ifft back to get the actual gauge field
         # This expression was acquired by 
         def AHat_mn(m, n, chargeFieldFFT_mn):
-            numerator = -self.delta**2 * self.g * chargeFieldFFT_mn
-            denominator = 2  * self.N**2 * (np.cos(2*np.pi*m*self.delta/self.length) + np.cos(2*np.pi*n*self.delta/self.length) - 2 - (self.M * self.delta)**2 / 2)
+            numerator = -self.delta2 * self.g * chargeFieldFFT_mn
+            denominator = 2  * self.N2 * (np.cos(2*np.pi*m*self.delta/self.length) + np.cos(2*np.pi*n*self.delta/self.length) - 2 - (self.M2 * self.delta2) / 2)
             # Should never happen:
             if denominator == 0:
                 raise 'Error in poison equation: IR reguilator is 0'

@@ -65,6 +65,7 @@ class Collision():
         self.length = self.targetWavefunction.length
         self.gluonDOF = self.targetWavefunction.gluonDOF
         self.delta = self.targetWavefunction.delta
+        self.delta2 = self.targetWavefunction.delta2
         self.fftNormalization = self.targetWavefunction.fftNormalization
         #print(self.targetWavefunction)
         #print(self.incidentWavefunction)
@@ -106,7 +107,7 @@ class Collision():
                 for k in range(self.gluonDOF):
                     for l in range(2): # 2 is number of dimensions
                         for n in range(2): # 2 is number of dimensions
-                            self._omega[l,n,k,i,j] = np.sum([derivs[l](self.incidentWavefunction.gaugeField()[m], i, j) * derivs[n](self.targetWavefunction.adjointWilsonLine()[k+1, m+1], i, j) for m in range(self.gluonDOF)])
+                            self._omega[l,n,k,i,j] = np.sum([derivs[l](self.incidentWavefunction.gaugeField()[m], i, j) * derivs[n](self.targetWavefunction.adjointWilsonLine()[k, m], i, j) for m in range(self.gluonDOF)])
 
         return self._omega
 
@@ -157,7 +158,7 @@ class Collision():
 
         for i in range(self.N):
             for j in range(self.N):
-                momentaMagSquared[i,j] = 4 / self.delta**2 * (np.sin((2*np.pi*i/self.length)*self.delta/2)**2 + np.sin((2*np.pi*j/self.length)*self.delta/2)**2)
+                momentaMagSquared[i,j] = 4 / self.delta2 * (np.sin((2*np.pi*i/self.length)*self.delta/2)**2 + np.sin((2*np.pi*j/self.length)*self.delta/2)**2)
 
         particleProduction = np.zeros([self.N, self.N])
 
