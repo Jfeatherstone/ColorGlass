@@ -21,7 +21,7 @@ class Wavefunction():
     #_wilsonLineExists = False # May not be implemented depending on nucleus/proton
     #_adjointWilsonLineExists = False # May not be implemented depending on nucleus/proton
 
-    def __init__(self, colorCharges, N, delta, mu, fftNormalization=None, M=.5, g=1):
+    def __init__(self, colorCharges, N, delta, mu, M=.5, g=1):
         r"""
 
         Base wavefunction class inplementing a generic color charge and gauge field
@@ -41,9 +41,6 @@ class Wavefunction():
         mu : positive float
             The scaling for the random gaussian distribution that generates the color charge density
 
-        fftNormalization : None | "backward" | "ortho" | "forward" (default=None)
-            Normalization procedure used when computing fourier transforms; see [scipy documentation](https://docs.scipy.org/doc/scipy/reference/generated/scipy.fft.fft.html) for more information
-
         M : float (default=.5)
             Infrared regulator parameter to regularize the Poisson equation for the gauge field.
 
@@ -56,7 +53,6 @@ class Wavefunction():
         self.mu = mu
         self.colorCharges = colorCharges
         self.gluonDOF = colorCharges**2 - 1
-        self.fftNormalization = fftNormalization
         self.M = M
         self.g = g
 
@@ -69,7 +65,7 @@ class Wavefunction():
         self.length = self.N * self.delta
         self.gaussianWidth = self.mu / self.delta
         self.xCenter = self.yCenter = self.length / 2
-
+        self.poissonReg = (self.M2 * self.delta2) / 2
 
     def colorChargeField(self):
         r"""
@@ -107,16 +103,19 @@ class Wavefunction():
         self.colorChargeField()
 
         # Compute the fourier transform of the charge field
-        chargeDensityFFTArr = fft2(self._colorChargeField, axes=(-2,-1), norm=self.fftNormalization)
+        chargeDensityFFTArr = fft2(self._colorChargeField, axes=(-2,-1), norm='backward')
+
+        # Absorb the numerator constants in the equation above into the charge density
+        chargeDensityFFTArr = -self.delta2 * self.g / 2 * chargeDensityFFTArr
 
         # This function calculates the individual elements of the gauge field in fourier space,
         # which we can then ifft back to get the actual gauge field
-        def AHat_mn(m, n, chargeFieldFFT_mn):
-            numerator = -self.delta2 * self.g * chargeFieldFFT_mn
-            denominator = 2 * self.N2 *(np.cos(2*np.pi*m*self.delta/self.length) + np.cos(2*np.pi*n*self.delta/self.length) - 2 - (self.M2 * self.delta2) / 2)
-            if denominator == 0:
-                return 0
-            return numerator / denominator
+        def AHat_mn(m, n, chargeDensityFFT_mn):
+            return chargeDensityFFT_mn/(2 - np.cos(2*np.pi/self.N * m) - np.cos(2*np.pi/self.N * n) + self.poissonReg)
+
+        # Vectorize to make it a bit faster
+        # Note that in the nucleus case, we use a separate library (numba) to speed up calculations since we often
+        # have to do it ~100 times, but here simple stuff should be fine
         vec_AHat_mn = np.vectorize(AHat_mn)
 
         # For indexing along the lattice
@@ -130,7 +129,7 @@ class Wavefunction():
             gaugeFieldFFTArr[k] = [vec_AHat_mn(i, jArr, chargeDensityFFTArr[k,i,jArr]) for i in iArr]
 
         # Take the inverse fourier transform to get the actual gauge field
-        self._gaugeField = np.real(ifft2(gaugeFieldFFTArr, axes=(-2, -1), norm=self.fftNormalization))
+        self._gaugeField = np.real(ifft2(gaugeFieldFFTArr, axes=(-2, -1), norm='backward'))
         # Make sure this process isn't repeated unnecessarily by denoting that it has been done
         self._gaugeFieldExists = True
 
@@ -145,7 +144,7 @@ class Proton(Wavefunction):
     with a width equal to `radius`.
     """
 
-    def __init__(self, colorCharges, N, delta, mu, radius, fftNormalization=None, M=.5, g=1):
+    def __init__(self, colorCharges, N, delta, mu, radius, M=.5, g=1):
         """
 
         Parameters
@@ -165,9 +164,6 @@ class Proton(Wavefunction):
         radius : positive float
             The scaling parameter for the gaussian factor that modifies the color charge density
 
-        fftNormalization : None | "backward" | "ortho" | "forward" (default=None)
-            Normalization procedure used when computing fourier transforms; see [scipy documentation](https://docs.scipy.org/doc/scipy/reference/generated/scipy.fft.fft.html) for more information
-
         M : float (default=.5)
             Infrared regulator parameter to regularize the Poisson equation for the gauge field.
 
@@ -176,7 +172,7 @@ class Proton(Wavefunction):
 
         """
 
-        super().__init__(colorCharges, N, delta, mu, fftNormalization, M, g) # Super constructor
+        super().__init__(colorCharges, N, delta, mu, M, g) # Super constructor
         self.radius = radius
 
     def colorChargeField(self):

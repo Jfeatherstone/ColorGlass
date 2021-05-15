@@ -1,0 +1,491 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1" />
+<meta name="generator" content="pdoc 0.9.2" />
+<title>cgc.LinAlg API documentation</title>
+<meta name="description" content="" />
+<link rel="preload stylesheet" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/11.0.1/sanitize.min.css" integrity="sha256-PK9q560IAAa6WVRRh76LtCaI8pjTJ2z11v0miyNNjrs=" crossorigin>
+<link rel="preload stylesheet" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/11.0.1/typography.min.css" integrity="sha256-7l/o7C8jubJiy74VsKTidCy1yBkRtiUGbVkYBylBqUg=" crossorigin>
+<link rel="stylesheet preload" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/10.1.1/styles/github.min.css" crossorigin>
+<style>:root{--highlight-color:#fe9}.flex{display:flex !important}body{line-height:1.5em}#content{padding:20px}#sidebar{padding:30px;overflow:hidden}#sidebar > *:last-child{margin-bottom:2cm}.http-server-breadcrumbs{font-size:130%;margin:0 0 15px 0}#footer{font-size:.75em;padding:5px 30px;border-top:1px solid #ddd;text-align:right}#footer p{margin:0 0 0 1em;display:inline-block}#footer p:last-child{margin-right:30px}h1,h2,h3,h4,h5{font-weight:300}h1{font-size:2.5em;line-height:1.1em}h2{font-size:1.75em;margin:1em 0 .50em 0}h3{font-size:1.4em;margin:25px 0 10px 0}h4{margin:0;font-size:105%}h1:target,h2:target,h3:target,h4:target,h5:target,h6:target{background:var(--highlight-color);padding:.2em 0}a{color:#058;text-decoration:none;transition:color .3s ease-in-out}a:hover{color:#e82}.title code{font-weight:bold}h2[id^="header-"]{margin-top:2em}.ident{color:#900}pre code{background:#f8f8f8;font-size:.8em;line-height:1.4em}code{background:#f2f2f1;padding:1px 4px;overflow-wrap:break-word}h1 code{background:transparent}pre{background:#f8f8f8;border:0;border-top:1px solid #ccc;border-bottom:1px solid #ccc;margin:1em 0;padding:1ex}#http-server-module-list{display:flex;flex-flow:column}#http-server-module-list div{display:flex}#http-server-module-list dt{min-width:10%}#http-server-module-list p{margin-top:0}.toc ul,#index{list-style-type:none;margin:0;padding:0}#index code{background:transparent}#index h3{border-bottom:1px solid #ddd}#index ul{padding:0}#index h4{margin-top:.6em;font-weight:bold}@media (min-width:200ex){#index .two-column{column-count:2}}@media (min-width:300ex){#index .two-column{column-count:3}}dl{margin-bottom:2em}dl dl:last-child{margin-bottom:4em}dd{margin:0 0 1em 3em}#header-classes + dl > dd{margin-bottom:3em}dd dd{margin-left:2em}dd p{margin:10px 0}.name{background:#eee;font-weight:bold;font-size:.85em;padding:5px 10px;display:inline-block;min-width:40%}.name:hover{background:#e0e0e0}dt:target .name{background:var(--highlight-color)}.name > span:first-child{white-space:nowrap}.name.class > span:nth-child(2){margin-left:.4em}.inherited{color:#999;border-left:5px solid #eee;padding-left:1em}.inheritance em{font-style:normal;font-weight:bold}.desc h2{font-weight:400;font-size:1.25em}.desc h3{font-size:1em}.desc dt code{background:inherit}.source summary,.git-link-div{color:#666;text-align:right;font-weight:400;font-size:.8em;text-transform:uppercase}.source summary > *{white-space:nowrap;cursor:pointer}.git-link{color:inherit;margin-left:1em}.source pre{max-height:500px;overflow:auto;margin:0}.source pre code{font-size:12px;overflow:visible}.hlist{list-style:none}.hlist li{display:inline}.hlist li:after{content:',\2002'}.hlist li:last-child:after{content:none}.hlist .hlist{display:inline;padding-left:1em}img{max-width:100%}td{padding:0 .5em}.admonition{padding:.1em .5em;margin-bottom:1em}.admonition-title{font-weight:bold}.admonition.note,.admonition.info,.admonition.important{background:#aef}.admonition.todo,.admonition.versionadded,.admonition.tip,.admonition.hint{background:#dfd}.admonition.warning,.admonition.versionchanged,.admonition.deprecated{background:#fd4}.admonition.error,.admonition.danger,.admonition.caution{background:lightpink}</style>
+<style media="screen and (min-width: 700px)">@media screen and (min-width:700px){#sidebar{width:30%;height:100vh;overflow:auto;position:sticky;top:0}#content{width:70%;max-width:100ch;padding:3em 4em;border-left:1px solid #ddd}pre code{font-size:1em}.item .name{font-size:1em}main{display:flex;flex-direction:row-reverse;justify-content:flex-end}.toc ul ul,#index ul{padding-left:1.5em}.toc > ul > li{margin-top:.5em}}</style>
+<style media="print">@media print{#sidebar h1{page-break-before:always}.source{display:none}}@media print{*{background:transparent !important;color:#000 !important;box-shadow:none !important;text-shadow:none !important}a[href]:after{content:" (" attr(href) ")";font-size:90%}a[href][title]:after{content:none}abbr[title]:after{content:" (" attr(title) ")"}.ir a:after,a[href^="javascript:"]:after,a[href^="#"]:after{content:""}pre,blockquote{border:1px solid #999;page-break-inside:avoid}thead{display:table-header-group}tr,img{page-break-inside:avoid}img{max-width:100% !important}@page{margin:0.5cm}p,h2,h3{orphans:3;widows:3}h1,h2,h3,h4,h5,h6{page-break-after:avoid}}</style>
+<script async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS_CHTML" integrity="sha256-kZafAc6mZvK3W3v1pHOcUix30OHQN6pU/NO2oFkqZVw=" crossorigin></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/10.1.1/highlight.min.js" integrity="sha256-Uv3H6lx7dJmRfRvH8TH6kJD1TSK1aFcwgx+mdg3epi8=" crossorigin></script>
+<script>window.addEventListener('DOMContentLoaded', () => hljs.initHighlighting())</script>
+</head>
+<body>
+<main>
+<article id="content">
+<header>
+<h1 class="title">Module <code>cgc.LinAlg</code></h1>
+</header>
+<section id="section-intro">
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">import numpy as np
+
+import numba
+from numba.typed import Dict
+
+from itertools import product
+
+
+&#34;&#34;&#34;
+The expm calculations has to be performed fast; scipy does not provide required speed,
+so we instead implement a version using the numba library.
+
+Modified version of:
+https://github.com/michael-hartmann/expm  
+&#34;&#34;&#34;
+
+
+# Relevant values from Table 10.2 in Functions of Matrices, Higham (2008)
+# Defines the values used to determine the optimal degree of the
+# calculation
+theta3  = 1.5e-2
+theta5  = 2.5e-1
+theta7  = 9.5e-1
+theta9  = 2.1e0
+theta13 = 5.4e0
+
+# And the coefficients for equation 10.33 corresponding to the degree
+# values in the above dictionary. The number of coefficients is the degree+1 (eg. b3 has 3+1 elements)
+b3  = [120,60,12,1]
+b5  = [30240,15120,3360,420,30,1]
+b7  = [17297280, 8648640,1995840, 277200, 25200,1512, 56,1]
+b9  = [17643225600,8821612800,2075673600,302702400,30270240, 2162160,110880,3960,90,1]
+b13 = [64764752532480000,32382376266240000,7771770303897600,1187353796428800,129060195264000,10559470521600,670442572800,33522128640,1323241920,40840800,960960,16380,182,1]
+
+
+@numba.jit(nopython=True) 
+def _expm_pade(A,M):
+    &#34;&#34;&#34;
+    Compute the exponential of a square matrix using the Pade approximation, as described in
+    _Functions of Matrices: Theory and Computation_i [1], algorithm 10.3, lines 1-6.
+
+    Parameters
+    ----------
+
+    A : numpy.mat
+        A square matrix to the compute the exponential of
+
+    M : positive integer
+        The degree of the matrix calculation (see [1])
+    &#34;&#34;&#34;
+    dtype = A.dtype
+    dim, dim = A.shape
+   
+    # The coefficients for solving equation 10.33 from [1] based on the degree
+    # Unfortunately, numba doesn&#39;t play well with dictionaries, so we have to do
+    # this the ugly way
+    if M == 3:
+        b = [120,60,12,1]
+    elif M == 5:
+        b = [30240,15120,3360,420,30,1]
+    elif M == 7:
+        b = [17297280, 8648640,1995840, 277200, 25200,1512, 56,1]
+    elif M == 9:
+        b = [17643225600,8821612800,2075673600,302702400,30270240, 2162160,110880,3960,90,1]
+    elif M == 13:
+        b = [64764752532480000,32382376266240000,7771770303897600,1187353796428800,129060195264000,10559470521600,670442572800,33522128640,1323241920,40840800,960960,16380,182,1]
+
+    # The list of supported numpy functions can be found here:
+    # https://numba.pydata.org/numba-doc/dev/reference/numpysupported.html
+    # It lists np.identity as being supported, but throws an error whenever
+    # you actually try to use it, so eye is entirely equivalent and _does_ work
+    U = b[1]*np.eye(dim, dtype=dtype)
+    V = b[0]*np.eye(dim, dtype=dtype)
+
+    A2 = np.dot(A,A)
+    A2n = np.eye(dim, dtype=dtype)
+
+    # evaluate (10.33)
+    for i in range(1,M//2+1):
+        A2n = np.dot(A2n,A2)
+        U += b[2*i+1]*A2n
+        V += b[2*i]  *A2n
+
+    #del A2,A2n
+    U = np.dot(A,U)
+
+    return np.linalg.solve(V-U, V+U)
+
+
+@numba.jit(nopython=True) 
+def _expm_ss(A,norm):
+    &#34;&#34;&#34;
+    Compute the exponential of a square matrix using the scaling and squaring method, as described in
+    _Functions of Matrices: Theory and Computation_i [1], algorithm 10.3, lines 7-13.
+
+    Parameters
+    ----------
+
+    A : numpy.mat
+        A square matrix to the compute the exponential of
+
+    norm : double
+        The norm of the matrix A
+        
+    &#34;&#34;&#34;
+
+    dim, dim = A.shape
+
+    # The coefficients for m=13 used to solve equation 10.33 from [1]
+    b = [64764752532480000,32382376266240000,7771770303897600,1187353796428800,129060195264000,10559470521600,670442572800,33522128640,1323241920,40840800,960960,16380,182,1]
+
+    # Ensure that A/2^s &lt;= theta13
+    s = max(0, int(np.ceil(np.log(norm/theta13)/np.log(2))))
+    if s &gt; 0:
+        A /= 2**s
+
+    Id = np.eye(dim)
+    A2 = np.dot(A,A)
+    A4 = np.dot(A2,A2)
+    A6 = np.dot(A2,A4)
+
+    U = np.dot(A, np.dot(A6, b[13]*A6+b[11]*A4+b[9]*A2)+b[7]*A6+b[5]*A4+b[3]*A2+b[1]*Id)
+    V = np.dot(A6, b[12]*A6+b[10]*A4+b[8]*A2) + b[6]*A6 + b[4]*A4 + b[2]*A2 + b[0]*Id
+
+    # We&#39;ll get a warning from numba that dot is slow on non-contiguous arrays here if
+    # we don&#39;t convert first. Not sure how much it actually speeds anything up, but
+    # it gets rid of the warning. (NOTE: without conversion, array is of type &#39;F&#39;)
+    r13 = np.ascontiguousarray(np.linalg.solve(V-U, V+U))
+
+    return np.linalg.matrix_power(r13, 2**s)
+
+@numba.jit(nopython=True) 
+def expm(A):
+    r&#34;&#34;&#34;
+    Calculate the matrix exponential of a square matrix A
+
+    This module implements algorithm 10.20 from _Functions of Matrices: Theory and Computation_ [1].
+    The matrix exponential is calculated using either the scaling and squaring method or the Pade approximation,
+    depending on which will be more accurate.
+
+    Per [1], the error on the calculation is of order \(10^{-16}\).
+
+    References
+    ----------
+
+    [1] Higham, N. J. (2008). _Functions of matrices: Theory and computation_. Society for Industrial and Applied Mathematics.
+
+    &#34;&#34;&#34;
+    # Calculate the norm of A
+    norm = np.linalg.norm(A, ord=1)
+
+    # Decide which numerical method to use given the norm of the matrix
+    if   norm &lt; theta3:
+        return _expm_pade(A,3)
+    elif norm &lt; theta5:
+        return _expm_pade(A,5)
+    elif norm &lt; theta7:
+        return _expm_pade(A,7)
+    elif norm &lt; theta9:
+        return _expm_pade(A,9)
+    else:
+        return _expm_ss(A,norm)
+
+
+&#34;&#34;&#34;
+The following two methods are used to generate a set of
+basis matrices used in calculating the Wilson Line
+
+Modified version of:
+https://github.com/CQuIC/pysme/blob/master/src/pysme/gellmann.py
+originally made by Jonathan Gross
+&#34;&#34;&#34;
+
+def gen_gellmann(j, k, d):
+    r&#34;&#34;&#34;
+    Returns a generalized Gell-Mann matrix of dimension d according to Bertlmann &amp; Krammer (2008).
+
+    Adapted from Jonathan Gross&#39;s [pysme library](https://github.com/CQuIC/pysme/blob/master/src/pysme/gellmann.py).
+
+    For generation of all generalized Gell-Mann matrices for a given dimension, see `cgc.LinAlg.get_basis`.
+
+
+    Parameters
+    ----------
+    j : positive integer
+        Index for generalized Gell-Mann matrix
+    k : positive integer
+        Index for generalized Gell-Mann matrix
+    d : positive integer
+        Dimension of the generalized Gell-Mann matrix
+
+    Returns
+    -------
+    numpy.array
+        A genereralized Gell-Mann matrix
+
+    References
+    ----------
+
+    Bertlmann, R. A., &amp; Krammer, P. (2008). Bloch vectors for qudits. Journal of Physics A: Mathematical and Theoretical, 41(23), 235303. [10.1088/1751-8113/41/23/235303](https://doi.org/10.1088/1751-8113/41/23/235303)
+    &#34;&#34;&#34;
+
+    if j &gt; k:
+        gjkd = np.zeros((d, d), dtype=&#39;complex&#39;)
+        gjkd[j - 1][k - 1] = 1
+        gjkd[k - 1][j - 1] = 1
+    elif k &gt; j:
+        gjkd = np.zeros((d, d), dtype=&#39;complex&#39;)
+        gjkd[j - 1][k - 1] = -1.j
+        gjkd[k - 1][j - 1] = 1.j
+    elif j == k and j &lt; d:
+        gjkd = np.sqrt(2/(j*(j + 1)))*np.diag([1 + 0.j if n &lt;= j
+                                               else (-j + 0.j if n == (j + 1)
+                                                     else 0 + 0.j)
+                                               for n in range(1, d + 1)])
+    else:
+        gjkd = np.diag([1 + 0.j for n in range(1, d + 1)])*np.sqrt(2/d)
+
+    return gjkd
+
+
+def get_basis(d):
+    r&#34;&#34;&#34;Return a Hermitian and traceless set of basis matrices for \(SU(d)\), as well
+    as the identity. The former matrices satisfy:
+
+    The basis is made up of \(d^2 - 1\) generalized Gell-Mann matrices, and then the identity
+    as the last matrix.
+
+    $$ tr( t^a t^b) = \frac{1}{2} \delta_{ab} $$
+
+    For individual generation information, see `cgc.LinAlg.gen_gellmann`
+
+    Parameters
+    ----------
+
+    d : positive integer
+        The dimension of the Hilbert space
+
+    Returns
+    -------
+
+    list of numpy.ndarray
+        The basis matrices
+
+    &#34;&#34;&#34;
+
+    return np.array([gen_gellmann(j, k, d)/2 for j, k in product(range(1, d + 1), repeat=2)])</code></pre>
+</details>
+</section>
+<section>
+</section>
+<section>
+</section>
+<section>
+<h2 class="section-title" id="header-functions">Functions</h2>
+<dl>
+<dt id="cgc.LinAlg.expm"><code class="name flex">
+<span>def <span class="ident">expm</span></span>(<span>A)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Calculate the matrix exponential of a square matrix A</p>
+<p>This module implements algorithm 10.20 from <em>Functions of Matrices: Theory and Computation</em> [1].
+The matrix exponential is calculated using either the scaling and squaring method or the Pade approximation,
+depending on which will be more accurate.</p>
+<p>Per [1], the error on the calculation is of order <span><span class="MathJax_Preview">10^{-16}</span><script type="math/tex">10^{-16}</script></span>.</p>
+<h2 id="references">References</h2>
+<p>[1] Higham, N. J. (2008). <em>Functions of matrices: Theory and computation</em>. Society for Industrial and Applied Mathematics.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@numba.jit(nopython=True) 
+def expm(A):
+    r&#34;&#34;&#34;
+    Calculate the matrix exponential of a square matrix A
+
+    This module implements algorithm 10.20 from _Functions of Matrices: Theory and Computation_ [1].
+    The matrix exponential is calculated using either the scaling and squaring method or the Pade approximation,
+    depending on which will be more accurate.
+
+    Per [1], the error on the calculation is of order \(10^{-16}\).
+
+    References
+    ----------
+
+    [1] Higham, N. J. (2008). _Functions of matrices: Theory and computation_. Society for Industrial and Applied Mathematics.
+
+    &#34;&#34;&#34;
+    # Calculate the norm of A
+    norm = np.linalg.norm(A, ord=1)
+
+    # Decide which numerical method to use given the norm of the matrix
+    if   norm &lt; theta3:
+        return _expm_pade(A,3)
+    elif norm &lt; theta5:
+        return _expm_pade(A,5)
+    elif norm &lt; theta7:
+        return _expm_pade(A,7)
+    elif norm &lt; theta9:
+        return _expm_pade(A,9)
+    else:
+        return _expm_ss(A,norm)</code></pre>
+</details>
+</dd>
+<dt id="cgc.LinAlg.gen_gellmann"><code class="name flex">
+<span>def <span class="ident">gen_gellmann</span></span>(<span>j, k, d)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Returns a generalized Gell-Mann matrix of dimension d according to Bertlmann &amp; Krammer (2008).</p>
+<p>Adapted from Jonathan Gross's <a href="https://github.com/CQuIC/pysme/blob/master/src/pysme/gellmann.py">pysme library</a>.</p>
+<p>For generation of all generalized Gell-Mann matrices for a given dimension, see <code><a title="cgc.LinAlg.get_basis" href="#cgc.LinAlg.get_basis">get_basis()</a></code>.</p>
+<h2 id="parameters">Parameters</h2>
+<dl>
+<dt><strong><code>j</code></strong> :&ensp;<code>positive integer</code></dt>
+<dd>Index for generalized Gell-Mann matrix</dd>
+<dt><strong><code>k</code></strong> :&ensp;<code>positive integer</code></dt>
+<dd>Index for generalized Gell-Mann matrix</dd>
+<dt><strong><code>d</code></strong> :&ensp;<code>positive integer</code></dt>
+<dd>Dimension of the generalized Gell-Mann matrix</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><code>numpy.array</code></dt>
+<dd>A genereralized Gell-Mann matrix</dd>
+</dl>
+<h2 id="references">References</h2>
+<p>Bertlmann, R. A., &amp; Krammer, P. (2008). Bloch vectors for qudits. Journal of Physics A: Mathematical and Theoretical, 41(23), 235303. <a href="https://doi.org/10.1088/1751-8113/41/23/235303">10.1088/1751-8113/41/23/235303</a></p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def gen_gellmann(j, k, d):
+    r&#34;&#34;&#34;
+    Returns a generalized Gell-Mann matrix of dimension d according to Bertlmann &amp; Krammer (2008).
+
+    Adapted from Jonathan Gross&#39;s [pysme library](https://github.com/CQuIC/pysme/blob/master/src/pysme/gellmann.py).
+
+    For generation of all generalized Gell-Mann matrices for a given dimension, see `cgc.LinAlg.get_basis`.
+
+
+    Parameters
+    ----------
+    j : positive integer
+        Index for generalized Gell-Mann matrix
+    k : positive integer
+        Index for generalized Gell-Mann matrix
+    d : positive integer
+        Dimension of the generalized Gell-Mann matrix
+
+    Returns
+    -------
+    numpy.array
+        A genereralized Gell-Mann matrix
+
+    References
+    ----------
+
+    Bertlmann, R. A., &amp; Krammer, P. (2008). Bloch vectors for qudits. Journal of Physics A: Mathematical and Theoretical, 41(23), 235303. [10.1088/1751-8113/41/23/235303](https://doi.org/10.1088/1751-8113/41/23/235303)
+    &#34;&#34;&#34;
+
+    if j &gt; k:
+        gjkd = np.zeros((d, d), dtype=&#39;complex&#39;)
+        gjkd[j - 1][k - 1] = 1
+        gjkd[k - 1][j - 1] = 1
+    elif k &gt; j:
+        gjkd = np.zeros((d, d), dtype=&#39;complex&#39;)
+        gjkd[j - 1][k - 1] = -1.j
+        gjkd[k - 1][j - 1] = 1.j
+    elif j == k and j &lt; d:
+        gjkd = np.sqrt(2/(j*(j + 1)))*np.diag([1 + 0.j if n &lt;= j
+                                               else (-j + 0.j if n == (j + 1)
+                                                     else 0 + 0.j)
+                                               for n in range(1, d + 1)])
+    else:
+        gjkd = np.diag([1 + 0.j for n in range(1, d + 1)])*np.sqrt(2/d)
+
+    return gjkd</code></pre>
+</details>
+</dd>
+<dt id="cgc.LinAlg.get_basis"><code class="name flex">
+<span>def <span class="ident">get_basis</span></span>(<span>d)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Return a Hermitian and traceless set of basis matrices for <span><span class="MathJax_Preview">SU(d)</span><script type="math/tex">SU(d)</script></span>, as well
+as the identity. The former matrices satisfy:</p>
+<p>The basis is made up of <span><span class="MathJax_Preview">d^2 - 1</span><script type="math/tex">d^2 - 1</script></span> generalized Gell-Mann matrices, and then the identity
+as the last matrix.</p>
+<p><span><span class="MathJax_Preview"> tr( t^a t^b) = \frac{1}{2} \delta_{ab} </span><script type="math/tex; mode=display"> tr( t^a t^b) = \frac{1}{2} \delta_{ab} </script></span></p>
+<p>For individual generation information, see <code><a title="cgc.LinAlg.gen_gellmann" href="#cgc.LinAlg.gen_gellmann">gen_gellmann()</a></code></p>
+<h2 id="parameters">Parameters</h2>
+<dl>
+<dt><strong><code>d</code></strong> :&ensp;<code>positive integer</code></dt>
+<dd>The dimension of the Hilbert space</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><code>list</code> of <code>numpy.ndarray</code></dt>
+<dd>The basis matrices</dd>
+</dl></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_basis(d):
+    r&#34;&#34;&#34;Return a Hermitian and traceless set of basis matrices for \(SU(d)\), as well
+    as the identity. The former matrices satisfy:
+
+    The basis is made up of \(d^2 - 1\) generalized Gell-Mann matrices, and then the identity
+    as the last matrix.
+
+    $$ tr( t^a t^b) = \frac{1}{2} \delta_{ab} $$
+
+    For individual generation information, see `cgc.LinAlg.gen_gellmann`
+
+    Parameters
+    ----------
+
+    d : positive integer
+        The dimension of the Hilbert space
+
+    Returns
+    -------
+
+    list of numpy.ndarray
+        The basis matrices
+
+    &#34;&#34;&#34;
+
+    return np.array([gen_gellmann(j, k, d)/2 for j, k in product(range(1, d + 1), repeat=2)])</code></pre>
+</details>
+</dd>
+</dl>
+</section>
+<section>
+</section>
+</article>
+<nav id="sidebar">
+<h1>Index</h1>
+<div class="toc">
+<ul></ul>
+</div>
+<ul id="index">
+<li><h3>Super-module</h3>
+<ul>
+<li><code><a title="cgc" href="index.html">cgc</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-functions">Functions</a></h3>
+<ul class="">
+<li><code><a title="cgc.LinAlg.expm" href="#cgc.LinAlg.expm">expm</a></code></li>
+<li><code><a title="cgc.LinAlg.gen_gellmann" href="#cgc.LinAlg.gen_gellmann">gen_gellmann</a></code></li>
+<li><code><a title="cgc.LinAlg.get_basis" href="#cgc.LinAlg.get_basis">get_basis</a></code></li>
+</ul>
+</li>
+</ul>
+</nav>
+</main>
+<footer id="footer">
+<p>Generated by <a href="https://pdoc3.github.io/pdoc"><cite>pdoc</cite> 0.9.2</a>.</p>
+</footer>
+</body>
+</html>

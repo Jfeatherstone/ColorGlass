@@ -66,7 +66,6 @@ class Collision():
         self.gluonDOF = self.targetWavefunction.gluonDOF
         self.delta = self.targetWavefunction.delta
         self.delta2 = self.targetWavefunction.delta2
-        self.fftNormalization = self.targetWavefunction.fftNormalization
         #print(self.targetWavefunction)
         #print(self.incidentWavefunction)
 
@@ -124,7 +123,7 @@ class Collision():
         # Make sure omega exists
         self.omega()
 
-        self._omegaFFT = fft2(self._omega, axes=(-2, -1), norm=self.fftNormalization)
+        self._omegaFFT = fft2(self._omega, axes=(-2, -1), norm='backward')
         self._omegaFFTExists = True
 
         return self._omegaFFT

@@ -28,96 +28,12 @@
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">from .Wavefunction import Wavefunction
+from .LinAlg import expm, get_basis
+
+import numba
 
 import numpy as np
 from scipy.fft import ifft2, fft2
-from scipy.linalg import expm
-
-from itertools import product
-
-&#34;&#34;&#34;
-These first two methods, outside of both classes, are used to generate a set of
-basis matrices used in calculating the Wilson Line
-
-Modified version of:
-https://github.com/CQuIC/pysme/blob/master/src/pysme/gellmann.py
-originally made by Jonathan Gross
-&#34;&#34;&#34;
-
-def gen_gellmann(j, k, d):
-    r&#34;&#34;&#34;
-    Returns a generalized Gell-Mann matrix of dimension d according to Bertlmann &amp; Krammer (2008).
-
-    Adapted from Jonathan Gross&#39;s [pysme library](https://github.com/CQuIC/pysme/blob/master/src/pysme/gellmann.py).
-
-    For generation of all generalized Gell-Mann matrices for a given dimension, see `cgc.ArbColors.get_basis`.
-
-
-    Parameters
-    ----------
-    j : positive integer
-        Index for generalized Gell-Mann matrix
-    k : positive integer
-        Index for generalized Gell-Mann matrix
-    d : positive integer
-        Dimension of the generalized Gell-Mann matrix
-
-    Returns
-    -------
-    numpy.array
-        A genereralized Gell-Mann matrix
-
-    References
-    ----------
-
-    Bertlmann, R. A., &amp; Krammer, P. (2008). Bloch vectors for qudits. Journal of Physics A: Mathematical and Theoretical, 41(23), 235303. [10.1088/1751-8113/41/23/235303](https://doi.org/10.1088/1751-8113/41/23/235303)
-    &#34;&#34;&#34;
-
-    if j &gt; k:
-        gjkd = np.zeros((d, d), dtype=&#39;complex&#39;)
-        gjkd[j - 1][k - 1] = 1
-        gjkd[k - 1][j - 1] = 1
-    elif k &gt; j:
-        gjkd = np.zeros((d, d), dtype=&#39;complex&#39;)
-        gjkd[j - 1][k - 1] = -1.j
-        gjkd[k - 1][j - 1] = 1.j
-    elif j == k and j &lt; d:
-        gjkd = np.sqrt(2/(j*(j + 1)))*np.diag([1 + 0.j if n &lt;= j
-                                               else (-j + 0.j if n == (j + 1)
-                                                     else 0 + 0.j)
-                                               for n in range(1, d + 1)])
-    else:
-        gjkd = np.diag([1 + 0.j for n in range(1, d + 1)])*np.sqrt(2/d)
-
-    return gjkd
-
-def get_basis(d):
-    r&#34;&#34;&#34;Return a Hermitian and traceless set of basis matrices for \(SU(d)\), as well
-    as the identity. The former matrices satisfy:
-
-    The basis is made up of \(d^2 - 1\) generalized Gell-Mann matrices, and then the identity
-    as the last matrix.
-
-    $$ tr( t^a t^b) = \frac{1}{2} \delta_{ab} $$
-
-    For individual generation information, see `cgc.ArbColors.gen_gellmann`
-
-    Parameters
-    ----------
-
-    d : positive integer
-        The dimension of the Hilbert space
-
-    Returns
-    -------
-
-    list of numpy.ndarray
-        The basis matrices
-
-    &#34;&#34;&#34;
-
-    return [gen_gellmann(j, k, d)/2 for j, k in product(range(1, d + 1), repeat=2)]
-
 
 class Nucleus(Wavefunction):
 
@@ -130,7 +46,7 @@ class Nucleus(Wavefunction):
     _wilsonLineExists = False
     _adjointWilsonLineExists = False
 
-    def __init__(self, colorCharges, N, delta, mu, fftNormalization=None, M=.5, g=1, Ny=100):
+    def __init__(self, colorCharges, N, delta, mu, M=.5, g=1, Ny=100):
         r&#34;&#34;&#34;
         Dense object to be used in an instance of `cgc.Collision.Collision`.
 
@@ -151,9 +67,6 @@ class Nucleus(Wavefunction):
         mu : positive float
             The scaling for the random gaussian distribution that generates the color charge density.
 
-        fftNormalization : None | &#34;backward&#34; | &#34;ortho&#34; | &#34;forward&#34; (default=None)
-            Normalization procedure used when computing fourier transforms; see [scipy documentation](https://docs.scipy.org/doc/scipy/reference/generated/scipy.fft.fft.html) for more information.
-
         M : float (default=.5)
             Infrared regulator parameter to regularize the Poisson equation for the gauge field.
 
@@ -165,7 +78,7 @@ class Nucleus(Wavefunction):
 
         &#34;&#34;&#34;
 
-        super().__init__(colorCharges, N, delta, mu, fftNormalization, M, g) # Super constructor
+        super().__init__(colorCharges, N, delta, mu, M, g) # Super constructor
         self._basis = get_basis(colorCharges)
         self.Ny = Ny
 
@@ -214,38 +127,23 @@ class Nucleus(Wavefunction):
         self.colorChargeField()
 
         # Compute the fourier transform of the charge field
-        chargeDensityFFTArr = fft2(self._colorChargeField, axes=(-2,-1), norm=self.fftNormalization)
+        # Note that the normalization is set to &#39;backward&#39;, which for scipy means that the
+        # ifft2 is scaled by 1/n (where n = N^2)
+        chargeDensityFFTArr = fft2(self._colorChargeField, axes=(-2,-1), norm=&#39;backward&#39;)
 
-        # This function calculates the individual elements of the gauge field in fourier space,
-        # which we can then ifft back to get the actual gauge field
-        # This expression was acquired by 
-        def AHat_mn(m, n, chargeFieldFFT_mn):
-            numerator = -self.delta2 * self.g * chargeFieldFFT_mn
-            denominator = 2  * self.N2 * (np.cos(2*np.pi*m*self.delta/self.length) + np.cos(2*np.pi*n*self.delta/self.length) - 2 - (self.M2 * self.delta2) / 2)
-            # Should never happen:
-            if denominator == 0:
-                raise &#39;Error in poison equation: IR reguilator is 0&#39;
-                return 0
-            return numerator / denominator
-        vec_AHat_mn = np.vectorize(AHat_mn)
-
-        # For indexing along the lattice
-        iArr = np.arange(0, self.N)
-        jArr = np.arange(0, self.N)
+        # Absorb the numerator constants in the equation above into the charge density
+        chargeDensityFFTArr = -self.delta2 * self.g / 2 * chargeDensityFFTArr
 
         # Calculate the individual elements of the gauge field in fourier space
-        gaugeFieldFFTArr = np.zeros_like(self._colorChargeField, dtype=&#39;complex&#39;)
-
         # Note here that we have to solve the gauge field for each layer and for each gluon degree of freedom
-        for l in range(self.Ny):
-            for k in range(self.gluonDOF):
-                gaugeFieldFFTArr[l,k] = [vec_AHat_mn(i, jArr, chargeDensityFFTArr[l,k,i,jArr]) for i in iArr]
+        # This method is defined at the bottom of this file; see there for more information
+        gaugeFieldFFTArr = _calculateGaugeFFTOpt(self.gluonDOF, self.N, self.Ny, self.poissonReg, chargeDensityFFTArr); 
 
         # Take the inverse fourier transform to get the actual gauge field
-        self._gaugeField = np.real(ifft2(gaugeFieldFFTArr, axes=(-2, -1), norm=self.fftNormalization))
+        self._gaugeField = np.real(ifft2(gaugeFieldFFTArr, axes=(-2, -1), norm=&#39;backward&#39;))
+
         # Make sure this process isn&#39;t repeated unnecessarily by denoting that it has been done
         self._gaugeFieldExists = True
-
         return self._gaugeField
 
 
@@ -259,23 +157,11 @@ class Nucleus(Wavefunction):
             return self._wilsonLine
 
         # Make sure the gauge field has already been calculated
-        if not self._gaugeFieldExists:
-            self.gaugeField()
-
-        #self._wilsonLine = np.zeros([self.gluonDOF+1, self.N, self.N], dtype=&#39;complex&#39;)
-        self._wilsonLine = np.ones([self.N, self.N, self.colorCharges, self.colorCharges], dtype=&#39;complex&#39;)
+        self.gaugeField()
 
         # We now combine all of the longitudinal layers into the single wilson line
-        # The path ordered exponential becomes just a product of exponentials for each layer
-        
-        for i in range(self.N):
-            for j in range(self.N):
-                self._wilsonLine[i,j] = np.identity(self.colorCharges, dtype=&#39;complex&#39;)
-                for l in range(self.Ny):
-                    # Numerical form for SU(n)
-                    # Note that identity is last in the _basis matrix set, so we no longer need to +1
-                    self._wilsonLine[i,j] = np.dot(self._wilsonLine[i,j], expm(-1.j*sum([self._gaugeField[l,k,i,j]*self._basis[k] for k in range(self.gluonDOF)])))
-
+        # Optimized method is defined at the end of this file; see there for more information
+        self._wilsonLine = _calculateWilsonLineOpt(self.N, self.Ny, self.colorCharges, self._basis, self._gaugeField)
         self._wilsonLineExists = True
 
         return self._wilsonLine
@@ -293,164 +179,110 @@ class Nucleus(Wavefunction):
         if not self._wilsonLineExists:
             self.wilsonLine()
 
-        self._adjointWilsonLine = np.zeros([self.gluonDOF, self.gluonDOF, self.N, self.N], dtype=&#39;complex&#39;)
-
-        for a in range(self.gluonDOF):
-            for b in range(self.gluonDOF):
-                for i in range(self.N):
-                    for j in range(self.N):
-                        V = self._wilsonLine[i,j]
-                        Vdag = np.conjugate(np.transpose(V))
-                        self._adjointWilsonLine[a,b,i,j] = 2 * np.trace(np.dot(np.dot(self._basis[a], V), np.dot(self._basis[b], Vdag)))
-
-
+        # Calculation is optimized with numba, as with the previous calculations
+        # See bottom of the file for more information
+        self._adjointWilsonLine = _calculateAdjointWilsonLineOpt(self.gluonDOF, self.N, self._basis, self._wilsonLine)
         self._adjointWilsonLineExists = True
 
-        return self._adjointWilsonLine</code></pre>
-</details>
-</section>
-<section>
-</section>
-<section>
-</section>
-<section>
-<h2 class="section-title" id="header-functions">Functions</h2>
-<dl>
-<dt id="cgc.ArbColors.gen_gellmann"><code class="name flex">
-<span>def <span class="ident">gen_gellmann</span></span>(<span>j, k, d)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Returns a generalized Gell-Mann matrix of dimension d according to Bertlmann &amp; Krammer (2008).</p>
-<p>Adapted from Jonathan Gross's <a href="https://github.com/CQuIC/pysme/blob/master/src/pysme/gellmann.py">pysme library</a>.</p>
-<p>For generation of all generalized Gell-Mann matrices for a given dimension, see <code><a title="cgc.ArbColors.get_basis" href="#cgc.ArbColors.get_basis">get_basis()</a></code>.</p>
-<h2 id="parameters">Parameters</h2>
-<dl>
-<dt><strong><code>j</code></strong> :&ensp;<code>positive integer</code></dt>
-<dd>Index for generalized Gell-Mann matrix</dd>
-<dt><strong><code>k</code></strong> :&ensp;<code>positive integer</code></dt>
-<dd>Index for generalized Gell-Mann matrix</dd>
-<dt><strong><code>d</code></strong> :&ensp;<code>positive integer</code></dt>
-<dd>Dimension of the generalized Gell-Mann matrix</dd>
-</dl>
-<h2 id="returns">Returns</h2>
-<dl>
-<dt><code>numpy.array</code></dt>
-<dd>A genereralized Gell-Mann matrix</dd>
-</dl>
-<h2 id="references">References</h2>
-<p>Bertlmann, R. A., &amp; Krammer, P. (2008). Bloch vectors for qudits. Journal of Physics A: Mathematical and Theoretical, 41(23), 235303. <a href="https://doi.org/10.1088/1751-8113/41/23/235303">10.1088/1751-8113/41/23/235303</a></p></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def gen_gellmann(j, k, d):
+        return self._adjointWilsonLine
+
+
+
+# Since we want to speed up the calculate, we define the calculation of the fourier elements of
+# the gauge field using a numba-compiled method
+# This has to be defined outside of the Nuclelus class since numbda doesn&#39;t play well with custom libraries
+@numba.jit(nopython=True)
+def _calculateGaugeFFTOpt(gluonDOF, N, Ny, poissonReg, chargeDensityFFTArr):
     r&#34;&#34;&#34;
-    Returns a generalized Gell-Mann matrix of dimension d according to Bertlmann &amp; Krammer (2008).
+    Calculate the elements of the gauge field in fourier space.
 
-    Adapted from Jonathan Gross&#39;s [pysme library](https://github.com/CQuIC/pysme/blob/master/src/pysme/gellmann.py).
-
-    For generation of all generalized Gell-Mann matrices for a given dimension, see `cgc.ArbColors.get_basis`.
-
-
-    Parameters
-    ----------
-    j : positive integer
-        Index for generalized Gell-Mann matrix
-    k : positive integer
-        Index for generalized Gell-Mann matrix
-    d : positive integer
-        Dimension of the generalized Gell-Mann matrix
-
-    Returns
-    -------
-    numpy.array
-        A genereralized Gell-Mann matrix
-
-    References
-    ----------
-
-    Bertlmann, R. A., &amp; Krammer, P. (2008). Bloch vectors for qudits. Journal of Physics A: Mathematical and Theoretical, 41(23), 235303. [10.1088/1751-8113/41/23/235303](https://doi.org/10.1088/1751-8113/41/23/235303)
+    This method is optimized using numba.
     &#34;&#34;&#34;
+    gaugeFieldFFTArr = np.zeros_like(chargeDensityFFTArr, dtype=&#39;complex&#39;)
 
-    if j &gt; k:
-        gjkd = np.zeros((d, d), dtype=&#39;complex&#39;)
-        gjkd[j - 1][k - 1] = 1
-        gjkd[k - 1][j - 1] = 1
-    elif k &gt; j:
-        gjkd = np.zeros((d, d), dtype=&#39;complex&#39;)
-        gjkd[j - 1][k - 1] = -1.j
-        gjkd[k - 1][j - 1] = 1.j
-    elif j == k and j &lt; d:
-        gjkd = np.sqrt(2/(j*(j + 1)))*np.diag([1 + 0.j if n &lt;= j
-                                               else (-j + 0.j if n == (j + 1)
-                                                     else 0 + 0.j)
-                                               for n in range(1, d + 1)])
-    else:
-        gjkd = np.diag([1 + 0.j for n in range(1, d + 1)])*np.sqrt(2/d)
+    # Precompute for speed
+    two_pi_over_N = 2 * np.pi / N
 
-    return gjkd</code></pre>
-</details>
-</dd>
-<dt id="cgc.ArbColors.get_basis"><code class="name flex">
-<span>def <span class="ident">get_basis</span></span>(<span>d)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Return a Hermitian and traceless set of basis matrices for <span><span class="MathJax_Preview">SU(d)</span><script type="math/tex">SU(d)</script></span>, as well
-as the identity. The former matrices satisfy:</p>
-<p>The basis is made up of <span><span class="MathJax_Preview">d^2 - 1</span><script type="math/tex">d^2 - 1</script></span> generalized Gell-Mann matrices, and then the identity
-as the last matrix.</p>
-<p><span><span class="MathJax_Preview"> tr( t^a t^b) = \frac{1}{2} \delta_{ab} </span><script type="math/tex; mode=display"> tr( t^a t^b) = \frac{1}{2} \delta_{ab} </script></span></p>
-<p>For individual generation information, see <code><a title="cgc.ArbColors.gen_gellmann" href="#cgc.ArbColors.gen_gellmann">gen_gellmann()</a></code></p>
-<h2 id="parameters">Parameters</h2>
-<dl>
-<dt><strong><code>d</code></strong> :&ensp;<code>positive integer</code></dt>
-<dd>The dimension of the Hilbert space</dd>
-</dl>
-<h2 id="returns">Returns</h2>
-<dl>
-<dt><code>list</code> of <code>numpy.ndarray</code></dt>
-<dd>The basis matrices</dd>
-</dl></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def get_basis(d):
-    r&#34;&#34;&#34;Return a Hermitian and traceless set of basis matrices for \(SU(d)\), as well
-    as the identity. The former matrices satisfy:
+    for l in range(Ny):
+        for k in range(gluonDOF):
+            for i in range(N):
+                for j in range(N):
+                    gaugeFieldFFTArr[l,k,i,j] = chargeDensityFFTArr[l,k,i,j]/(2 - np.cos(two_pi_over_N*i) - np.cos(two_pi_over_N*j) + poissonReg) 
+    return gaugeFieldFFTArr
 
-    The basis is made up of \(d^2 - 1\) generalized Gell-Mann matrices, and then the identity
-    as the last matrix.
 
-    $$ tr( t^a t^b) = \frac{1}{2} \delta_{ab} $$
+# Same deal as the above method, we have to define it outside the class so
+# numba doesn&#39;t get confused
+@numba.jit(nopython=True) 
+def _calculateWilsonLineOpt(N, Ny, colorCharges, basis, gaugeField): 
+    r&#34;&#34;&#34;
+    Calculate the elements of the wilson line.
 
-    For individual generation information, see `cgc.ArbColors.gen_gellmann`
-
-    Parameters
-    ----------
-
-    d : positive integer
-        The dimension of the Hilbert space
-
-    Returns
-    -------
-
-    list of numpy.ndarray
-        The basis matrices
-
+    This method is optimized using numba.
     &#34;&#34;&#34;
+    wilsonLine = np.zeros((N, N, colorCharges, colorCharges), dtype=&#39;complex&#39;)       
+    gluonDOF = colorCharges**2 - 1
 
-    return [gen_gellmann(j, k, d)/2 for j, k in product(range(1, d + 1), repeat=2)]</code></pre>
+    # Slightly different ordering of indexing than in other places in the code,
+    # due to the fact that we have to sum of the gluonDOF and Ny axis
+    for i in range(N):
+        for j in range(N):
+
+            # Create the unit matrix for each point since we are multiplying
+            # the wilson line as we go (so we need to start with the identity)
+            for c in range(colorCharges): 
+                wilsonLine[i,j,c,c] = 1
+            
+            # The path ordered exponential becomes a product of exponentials for each layer
+            for l in range(Ny):
+                # Evaluate the argument of the exponential first 
+                # We multiply the elements of the gauge field for each gluon degree of freedom
+                # by the respective basis matrix and sum them together
+                expArgument = np.zeros((colorCharges, colorCharges), dtype=&#39;complex&#39;) # Same shape as basis matrices
+                for k in range(gluonDOF):
+                    expArgument = expArgument + gaugeField[l,k,i,j] * basis[k]
+                
+                # Now actually calculate the exponential with our custom defined expm method
+                # that can properly interface with numba (scipy&#39;s can&#39;t)
+                exponential = np.ascontiguousarray(expm(-1.j * expArgument))
+                wilsonLine[i,j] = np.dot(wilsonLine[i,j], exponential)
+
+    return wilsonLine
+
+
+@numba.jit(nopython=True)
+def _calculateAdjointWilsonLineOpt(gluonDOF, N, basis, wilsonLine):
+    r&#34;&#34;&#34;
+    Calculate the wilson line in the adjoint representation.
+
+    This method is optimized using numba.
+    &#34;&#34;&#34;
+    # Wilson line is always real in adjoint representation, so need to dtype=&#39;complex&#39; as with the others
+    adjointWilsonLine = np.zeros((gluonDOF, gluonDOF, N, N), dtype=&#39;double&#39;)
+
+    for a in range(gluonDOF):
+        for b in range(gluonDOF):
+            for i in range(N):
+                for j in range(N):
+                    V = wilsonLine[i,j]
+                    Vdag = np.conjugate(np.transpose(V))
+                    adjointWilsonLine[a,b,i,j] = 2 * np.real(np.trace(np.dot(np.dot(basis[a], V), np.dot(basis[b], Vdag))))
+
+    return adjointWilsonLine</code></pre>
 </details>
-</dd>
-</dl>
+</section>
+<section>
+</section>
+<section>
+</section>
+<section>
 </section>
 <section>
 <h2 class="section-title" id="header-classes">Classes</h2>
 <dl>
 <dt id="cgc.ArbColors.Nucleus"><code class="flex name class">
 <span>class <span class="ident">Nucleus</span></span>
-<span>(</span><span>colorCharges, N, delta, mu, fftNormalization=None, M=0.5, g=1, Ny=100)</span>
+<span>(</span><span>colorCharges, N, delta, mu, M=0.5, g=1, Ny=100)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Dense object to be used in an instance of <code><a title="cgc.Collision.Collision" href="Collision.html#cgc.Collision.Collision">Collision</a></code>.</p>
@@ -465,8 +297,6 @@ as the last matrix.</p>
 <dd>The distance between adjacent lattice sites.</dd>
 <dt><strong><code>mu</code></strong> :&ensp;<code>positive float</code></dt>
 <dd>The scaling for the random gaussian distribution that generates the color charge density.</dd>
-<dt><strong><code>fftNormalization</code></strong> :&ensp;<code>None | "backward" | "ortho" | "forward" (default=None)</code></dt>
-<dd>Normalization procedure used when computing fourier transforms; see <a href="https://docs.scipy.org/doc/scipy/reference/generated/scipy.fft.fft.html">scipy documentation</a> for more information.</dd>
 <dt><strong><code>M</code></strong> :&ensp;<code>float (default=.5)</code></dt>
 <dd>Infrared regulator parameter to regularize the Poisson equation for the gauge field.</dd>
 <dt><strong><code>g</code></strong> :&ensp;<code>float (default=1)</code></dt>
@@ -489,7 +319,7 @@ as the last matrix.</p>
     _wilsonLineExists = False
     _adjointWilsonLineExists = False
 
-    def __init__(self, colorCharges, N, delta, mu, fftNormalization=None, M=.5, g=1, Ny=100):
+    def __init__(self, colorCharges, N, delta, mu, M=.5, g=1, Ny=100):
         r&#34;&#34;&#34;
         Dense object to be used in an instance of `cgc.Collision.Collision`.
 
@@ -510,9 +340,6 @@ as the last matrix.</p>
         mu : positive float
             The scaling for the random gaussian distribution that generates the color charge density.
 
-        fftNormalization : None | &#34;backward&#34; | &#34;ortho&#34; | &#34;forward&#34; (default=None)
-            Normalization procedure used when computing fourier transforms; see [scipy documentation](https://docs.scipy.org/doc/scipy/reference/generated/scipy.fft.fft.html) for more information.
-
         M : float (default=.5)
             Infrared regulator parameter to regularize the Poisson equation for the gauge field.
 
@@ -524,7 +351,7 @@ as the last matrix.</p>
 
         &#34;&#34;&#34;
 
-        super().__init__(colorCharges, N, delta, mu, fftNormalization, M, g) # Super constructor
+        super().__init__(colorCharges, N, delta, mu, M, g) # Super constructor
         self._basis = get_basis(colorCharges)
         self.Ny = Ny
 
@@ -573,38 +400,23 @@ as the last matrix.</p>
         self.colorChargeField()
 
         # Compute the fourier transform of the charge field
-        chargeDensityFFTArr = fft2(self._colorChargeField, axes=(-2,-1), norm=self.fftNormalization)
+        # Note that the normalization is set to &#39;backward&#39;, which for scipy means that the
+        # ifft2 is scaled by 1/n (where n = N^2)
+        chargeDensityFFTArr = fft2(self._colorChargeField, axes=(-2,-1), norm=&#39;backward&#39;)
 
-        # This function calculates the individual elements of the gauge field in fourier space,
-        # which we can then ifft back to get the actual gauge field
-        # This expression was acquired by 
-        def AHat_mn(m, n, chargeFieldFFT_mn):
-            numerator = -self.delta2 * self.g * chargeFieldFFT_mn
-            denominator = 2  * self.N2 * (np.cos(2*np.pi*m*self.delta/self.length) + np.cos(2*np.pi*n*self.delta/self.length) - 2 - (self.M2 * self.delta2) / 2)
-            # Should never happen:
-            if denominator == 0:
-                raise &#39;Error in poison equation: IR reguilator is 0&#39;
-                return 0
-            return numerator / denominator
-        vec_AHat_mn = np.vectorize(AHat_mn)
-
-        # For indexing along the lattice
-        iArr = np.arange(0, self.N)
-        jArr = np.arange(0, self.N)
+        # Absorb the numerator constants in the equation above into the charge density
+        chargeDensityFFTArr = -self.delta2 * self.g / 2 * chargeDensityFFTArr
 
         # Calculate the individual elements of the gauge field in fourier space
-        gaugeFieldFFTArr = np.zeros_like(self._colorChargeField, dtype=&#39;complex&#39;)
-
         # Note here that we have to solve the gauge field for each layer and for each gluon degree of freedom
-        for l in range(self.Ny):
-            for k in range(self.gluonDOF):
-                gaugeFieldFFTArr[l,k] = [vec_AHat_mn(i, jArr, chargeDensityFFTArr[l,k,i,jArr]) for i in iArr]
+        # This method is defined at the bottom of this file; see there for more information
+        gaugeFieldFFTArr = _calculateGaugeFFTOpt(self.gluonDOF, self.N, self.Ny, self.poissonReg, chargeDensityFFTArr); 
 
         # Take the inverse fourier transform to get the actual gauge field
-        self._gaugeField = np.real(ifft2(gaugeFieldFFTArr, axes=(-2, -1), norm=self.fftNormalization))
+        self._gaugeField = np.real(ifft2(gaugeFieldFFTArr, axes=(-2, -1), norm=&#39;backward&#39;))
+
         # Make sure this process isn&#39;t repeated unnecessarily by denoting that it has been done
         self._gaugeFieldExists = True
-
         return self._gaugeField
 
 
@@ -618,23 +430,11 @@ as the last matrix.</p>
             return self._wilsonLine
 
         # Make sure the gauge field has already been calculated
-        if not self._gaugeFieldExists:
-            self.gaugeField()
-
-        #self._wilsonLine = np.zeros([self.gluonDOF+1, self.N, self.N], dtype=&#39;complex&#39;)
-        self._wilsonLine = np.ones([self.N, self.N, self.colorCharges, self.colorCharges], dtype=&#39;complex&#39;)
+        self.gaugeField()
 
         # We now combine all of the longitudinal layers into the single wilson line
-        # The path ordered exponential becomes just a product of exponentials for each layer
-        
-        for i in range(self.N):
-            for j in range(self.N):
-                self._wilsonLine[i,j] = np.identity(self.colorCharges, dtype=&#39;complex&#39;)
-                for l in range(self.Ny):
-                    # Numerical form for SU(n)
-                    # Note that identity is last in the _basis matrix set, so we no longer need to +1
-                    self._wilsonLine[i,j] = np.dot(self._wilsonLine[i,j], expm(-1.j*sum([self._gaugeField[l,k,i,j]*self._basis[k] for k in range(self.gluonDOF)])))
-
+        # Optimized method is defined at the end of this file; see there for more information
+        self._wilsonLine = _calculateWilsonLineOpt(self.N, self.Ny, self.colorCharges, self._basis, self._gaugeField)
         self._wilsonLineExists = True
 
         return self._wilsonLine
@@ -652,17 +452,9 @@ as the last matrix.</p>
         if not self._wilsonLineExists:
             self.wilsonLine()
 
-        self._adjointWilsonLine = np.zeros([self.gluonDOF, self.gluonDOF, self.N, self.N], dtype=&#39;complex&#39;)
-
-        for a in range(self.gluonDOF):
-            for b in range(self.gluonDOF):
-                for i in range(self.N):
-                    for j in range(self.N):
-                        V = self._wilsonLine[i,j]
-                        Vdag = np.conjugate(np.transpose(V))
-                        self._adjointWilsonLine[a,b,i,j] = 2 * np.trace(np.dot(np.dot(self._basis[a], V), np.dot(self._basis[b], Vdag)))
-
-
+        # Calculation is optimized with numba, as with the previous calculations
+        # See bottom of the file for more information
+        self._adjointWilsonLine = _calculateAdjointWilsonLineOpt(self.gluonDOF, self.N, self._basis, self._wilsonLine)
         self._adjointWilsonLineExists = True
 
         return self._adjointWilsonLine</code></pre>
@@ -696,17 +488,9 @@ as the last matrix.</p>
     if not self._wilsonLineExists:
         self.wilsonLine()
 
-    self._adjointWilsonLine = np.zeros([self.gluonDOF, self.gluonDOF, self.N, self.N], dtype=&#39;complex&#39;)
-
-    for a in range(self.gluonDOF):
-        for b in range(self.gluonDOF):
-            for i in range(self.N):
-                for j in range(self.N):
-                    V = self._wilsonLine[i,j]
-                    Vdag = np.conjugate(np.transpose(V))
-                    self._adjointWilsonLine[a,b,i,j] = 2 * np.trace(np.dot(np.dot(self._basis[a], V), np.dot(self._basis[b], Vdag)))
-
-
+    # Calculation is optimized with numba, as with the previous calculations
+    # See bottom of the file for more information
+    self._adjointWilsonLine = _calculateAdjointWilsonLineOpt(self.gluonDOF, self.N, self._basis, self._wilsonLine)
     self._adjointWilsonLineExists = True
 
     return self._adjointWilsonLine</code></pre>
@@ -783,38 +567,23 @@ Poisson equation involving the color charge field</p>
     self.colorChargeField()
 
     # Compute the fourier transform of the charge field
-    chargeDensityFFTArr = fft2(self._colorChargeField, axes=(-2,-1), norm=self.fftNormalization)
+    # Note that the normalization is set to &#39;backward&#39;, which for scipy means that the
+    # ifft2 is scaled by 1/n (where n = N^2)
+    chargeDensityFFTArr = fft2(self._colorChargeField, axes=(-2,-1), norm=&#39;backward&#39;)
 
-    # This function calculates the individual elements of the gauge field in fourier space,
-    # which we can then ifft back to get the actual gauge field
-    # This expression was acquired by 
-    def AHat_mn(m, n, chargeFieldFFT_mn):
-        numerator = -self.delta2 * self.g * chargeFieldFFT_mn
-        denominator = 2  * self.N2 * (np.cos(2*np.pi*m*self.delta/self.length) + np.cos(2*np.pi*n*self.delta/self.length) - 2 - (self.M2 * self.delta2) / 2)
-        # Should never happen:
-        if denominator == 0:
-            raise &#39;Error in poison equation: IR reguilator is 0&#39;
-            return 0
-        return numerator / denominator
-    vec_AHat_mn = np.vectorize(AHat_mn)
-
-    # For indexing along the lattice
-    iArr = np.arange(0, self.N)
-    jArr = np.arange(0, self.N)
+    # Absorb the numerator constants in the equation above into the charge density
+    chargeDensityFFTArr = -self.delta2 * self.g / 2 * chargeDensityFFTArr
 
     # Calculate the individual elements of the gauge field in fourier space
-    gaugeFieldFFTArr = np.zeros_like(self._colorChargeField, dtype=&#39;complex&#39;)
-
     # Note here that we have to solve the gauge field for each layer and for each gluon degree of freedom
-    for l in range(self.Ny):
-        for k in range(self.gluonDOF):
-            gaugeFieldFFTArr[l,k] = [vec_AHat_mn(i, jArr, chargeDensityFFTArr[l,k,i,jArr]) for i in iArr]
+    # This method is defined at the bottom of this file; see there for more information
+    gaugeFieldFFTArr = _calculateGaugeFFTOpt(self.gluonDOF, self.N, self.Ny, self.poissonReg, chargeDensityFFTArr); 
 
     # Take the inverse fourier transform to get the actual gauge field
-    self._gaugeField = np.real(ifft2(gaugeFieldFFTArr, axes=(-2, -1), norm=self.fftNormalization))
+    self._gaugeField = np.real(ifft2(gaugeFieldFFTArr, axes=(-2, -1), norm=&#39;backward&#39;))
+
     # Make sure this process isn&#39;t repeated unnecessarily by denoting that it has been done
     self._gaugeFieldExists = True
-
     return self._gaugeField</code></pre>
 </details>
 </dd>
@@ -838,23 +607,11 @@ Poisson equation involving the color charge field</p>
         return self._wilsonLine
 
     # Make sure the gauge field has already been calculated
-    if not self._gaugeFieldExists:
-        self.gaugeField()
-
-    #self._wilsonLine = np.zeros([self.gluonDOF+1, self.N, self.N], dtype=&#39;complex&#39;)
-    self._wilsonLine = np.ones([self.N, self.N, self.colorCharges, self.colorCharges], dtype=&#39;complex&#39;)
+    self.gaugeField()
 
     # We now combine all of the longitudinal layers into the single wilson line
-    # The path ordered exponential becomes just a product of exponentials for each layer
-    
-    for i in range(self.N):
-        for j in range(self.N):
-            self._wilsonLine[i,j] = np.identity(self.colorCharges, dtype=&#39;complex&#39;)
-            for l in range(self.Ny):
-                # Numerical form for SU(n)
-                # Note that identity is last in the _basis matrix set, so we no longer need to +1
-                self._wilsonLine[i,j] = np.dot(self._wilsonLine[i,j], expm(-1.j*sum([self._gaugeField[l,k,i,j]*self._basis[k] for k in range(self.gluonDOF)])))
-
+    # Optimized method is defined at the end of this file; see there for more information
+    self._wilsonLine = _calculateWilsonLineOpt(self.N, self.Ny, self.colorCharges, self._basis, self._gaugeField)
     self._wilsonLineExists = True
 
     return self._wilsonLine</code></pre>
@@ -874,12 +631,6 @@ Poisson equation involving the color charge field</p>
 <li><h3>Super-module</h3>
 <ul>
 <li><code><a title="cgc" href="index.html">cgc</a></code></li>
-</ul>
-</li>
-<li><h3><a href="#header-functions">Functions</a></h3>
-<ul class="">
-<li><code><a title="cgc.ArbColors.gen_gellmann" href="#cgc.ArbColors.gen_gellmann">gen_gellmann</a></code></li>
-<li><code><a title="cgc.ArbColors.get_basis" href="#cgc.ArbColors.get_basis">get_basis</a></code></li>
 </ul>
 </li>
 <li><h3><a href="#header-classes">Classes</a></h3>
