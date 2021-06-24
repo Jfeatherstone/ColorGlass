@@ -1,10 +1,8 @@
 import numpy as np
 
 import numba
-from numba.typed import Dict
 
 from itertools import product
-
 
 """
 The expm calculations has to be performed fast; scipy does not provide required speed,
