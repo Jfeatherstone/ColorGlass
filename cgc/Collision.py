@@ -3,6 +3,7 @@ from .Wavefunction import Wavefunction
 import numpy as np
 from scipy.fft import ifft2, fft2
 
+import numba
 
 class Collision():
 
@@ -153,50 +154,135 @@ class Collision():
         if self._particlesProducedExists:
             return self._particlesProduced
 
-        momentaMagSquared = np.zeros([self.N, self.N])
+        momentaComponents, theta = _calculateMomentaOpt(self.N, self.delta)
 
-        for i in range(self.N):
-            for j in range(self.N):
-                momentaMagSquared[i,j] = 4 / self.delta2 * (np.sin((2*np.pi*i/self.length)*self.delta/2)**2 + np.sin((2*np.pi*j/self.length)*self.delta/2)**2)
+        momentaMagSquared = np.linalg.norm(momentaComponents, axis=2)**2
 
-        particleProduction = np.zeros([self.N, self.N])
+        particleProductionZeroHarmonic = _calculatedNd2kHarmonicOpt(self.N, self.gluonDOF, momentaMagSquared, self.omegaFFT())
 
-        # Make sure omegaFFT exists
-        self.omegaFFT()
-
-        # # 2D Levi-Cevita symbol
-        #Matrix Representation
-        LCS = np.array([[0,1],[-1,0]])
-
-        # # 2D Delta function
-        #Matrix Representation
-        KDF = np.array([[1,0],[0,1]])
-
-        for y in range(self.N):
-            for x in range(self.N):
-                # To prevent any divide by zero errors
-                if momentaMagSquared[y,x] == 0:
-                    continue
-
-                for i in range(2):
-                    for j in range(2):
-                        for l in range(2):
-                            for m in range(2):
-
-                                for a in range(self.gluonDOF):
-                                    particleProduction[y,x] += np.real(2/(2*np.pi)**3 / momentaMagSquared[y,x] * (KDF[i,j]*KDF[l,m] + LCS[i,j]*LCS[l,m]) * self._omegaFFT[i,j,a,y,x] * np.conj(self._omegaFFT[l,m,a,y,x]))
+        # Now take the ratio of the two harmonics
+        #particleProduction = np.abs(particleProductionSecondHarmonic) / np.abs(particleProductionZeroHarmonic)
+        particleProduction = particleProductionZeroHarmonic
 
         vectorizedParticles = np.reshape(particleProduction, [self.N*self.N])
-        vectorizedMomentaMagSquared = np.reshape(np.sqrt(momentaMagSquared), [self.N*self.N])
-
+        vectorizedTheta = np.reshape(theta, [self.N*self.N])
+        vectorizedMomentaMag = np.reshape(np.sqrt(momentaMagSquared), [self.N*self.N])
+        
         self._particlesProduced = np.zeros(self.numBins)
         self.momentaBins()
 
-        # Note the use of element-wise (or bitwise) and, "&"
+        desiredHarmonic = 2
+
         for i in range(self.numBins):
-            self._particlesProduced[i] = np.mean(vectorizedParticles[(vectorizedMomentaMagSquared < self.binSize*(i+1)) & (vectorizedMomentaMagSquared > self.binSize*i)])
+            # Find which places on the lattice fall into this particular momentum bin
+            # Note the use of element-wise (or bitwise) and, "&"
+            particlesInRing = vectorizedParticles[(vectorizedMomentaMag < self.binSize*(i+1)) & (vectorizedMomentaMag > self.binSize*i)]
+            thetaInRing = vectorizedTheta[(vectorizedMomentaMag < self.binSize*(i+1)) & (vectorizedMomentaMag > self.binSize*i)]
+
+            # Zeroth harmonic is just the mean the particle values on the ring, since the argument of the exponential
+            # will always be zero
+            zerothHarmonicParticlesInRing = np.sum(particlesInRing) / self.N
+
+            # Any other harmonic is a little more complicated, since the divisor is now a sum of complex
+            # exponentials
+            secondHarmonicParticlesInRing = particlesInRing * np.exp(1.j * desiredHarmonic * thetaInRing)
+            secondHarmonicParticlesInRing = np.sum(secondHarmonicParticlesInRing) / np.sum(np.exp(1.j * desiredHarmonic * thetaInRing))
+
+            # Now take the ratio of the second harmonic to the zeroth
+            self._particlesProduced[i] = np.abs(secondHarmonicParticlesInRing) / np.abs(zerothHarmonicParticlesInRing)
 
         self._particlesProducedExists = True
 
         return self._particlesProduced
 
+@numba.jit(nopython=True, cache=True)
+def _calculateMomentaOpt(N, delta):
+    """
+    Optimized (via numba) function to calculated the position (momentum) in Fourier space of each point
+
+    Parameters
+    ----------
+
+    N : int
+        Size of the lattice
+
+    delta : double
+        Spacing between each point
+
+    Returns
+    -------
+    (momentaComponents, theta)
+
+    momentaComponents : array(N, N, 2)
+        x and y components of the momentum at each point
+
+    theta : array(N, N)
+        Relationship between x and y components at each point, or atan2(k_y, k_x)
+
+    """
+    momentaComponents = np.zeros((N, N, 2))
+    theta = np.zeros((N, N))
+
+    for i in range(N):
+        for j in range(N):
+            # Note that these components are of the form:
+            # k_x = 2/a sin(k_x' a / 2)
+            # Though the argument of the sin is simplified a bit
+            momentaComponents[i,j] = [2/delta * np.sin(np.pi*i/N), 2/delta * np.sin(np.pi*j/N)]
+            theta[i,j] = np.arctan2(momentaComponents[i,j,1], momentaComponents[i,j,0])
+
+    return momentaComponents, theta
+
+@numba.jit(nopython=True, cache=True)
+def _calculatedNd2kHarmonicOpt(N, gluonDOF, momentaMagSquared, omegaFFT):
+    """
+    Optimized (via numba) function to calculate a given harmonic of dN/d^2k
+
+    Parameters
+    ----------
+
+    N : int
+        The system size
+
+    gluonDOF : int
+        The number of gluon degrees of freedom ((possible color charges)^2 - 1)
+
+    momentaMagSquared : array(N, N)
+        The magnitude of the momentum at each point, likely calculated (in part) with _calculateMomentaOpt()
+
+    omegaFFT : array(2, 2, gluonDOF, N, N)
+        Previously calculated omega array
+
+    Returns
+    -------
+    particleProduction : array(N, N)
+        The number of particles produced at each point on the momentum lattice
+
+    """
+    # Where we will calculate dN/d^2k 
+    particleProduction = np.zeros((N,N))
+
+    # # 2D Levi-Cevita symbol
+    LCS = np.array([[0,1],[-1,0]])
+
+    # # 2D Delta function
+    KDF = np.array([[1,0],[0,1]])
+
+    for y in range(N):
+        for x in range(N):
+            # To prevent any divide by zero errors
+            if momentaMagSquared[y,x] == 0:
+                continue
+            
+            # All of these 2s are for our two dimensions, x and y
+            for i in range(2):
+                for j in range(2):
+                    for l in range(2):
+                        for m in range(2):
+
+                            for a in range(gluonDOF):
+                                particleProduction[y,x] += np.real(2/(2*np.pi)**3 / momentaMagSquared[y,x] * (
+                                    (KDF[i,j]*KDF[l,m] + LCS[i,j]*LCS[l,m])) * (
+                                        omegaFFT[i,j,a,y,x] * np.conj(omegaFFT[l,m,a,y,x])))
+
+    return particleProduction

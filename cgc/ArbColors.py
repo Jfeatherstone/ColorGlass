@@ -162,7 +162,7 @@ class Nucleus(Wavefunction):
 # Since we want to speed up the calculate, we define the calculation of the fourier elements of
 # the gauge field using a numba-compiled method
 # This has to be defined outside of the Nuclelus class since numbda doesn't play well with custom libraries
-@numba.jit(nopython=True)
+@numba.jit(nopython=True, cache=True)
 def _calculateGaugeFFTOpt(gluonDOF, N, Ny, poissonReg, chargeDensityFFTArr):
     r"""
     Calculate the elements of the gauge field in fourier space.
@@ -184,7 +184,7 @@ def _calculateGaugeFFTOpt(gluonDOF, N, Ny, poissonReg, chargeDensityFFTArr):
 
 # Same deal as the above method, we have to define it outside the class so
 # numba doesn't get confused
-@numba.jit(nopython=True) 
+@numba.jit(nopython=True, cache=True) 
 def _calculateWilsonLineOpt(N, Ny, colorCharges, basis, gaugeField): 
     r"""
     Calculate the elements of the wilson line.
@@ -221,12 +221,12 @@ def _calculateWilsonLineOpt(N, Ny, colorCharges, basis, gaugeField):
     return wilsonLine
 
 
-@numba.jit(nopython=True)
+@numba.jit(nopython=True, cache=True)
 def _calculateAdjointWilsonLineOpt(gluonDOF, N, basis, wilsonLine):
     r"""
     Calculate the wilson line in the adjoint representation.
 
-    This method is optimized using numba.
+    This method is optimized using numba
     """
     # Wilson line is always real in adjoint representation, so need to dtype='complex' as with the others
     adjointWilsonLine = np.zeros((gluonDOF, gluonDOF, N, N), dtype='double')
