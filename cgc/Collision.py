@@ -5,6 +5,8 @@ from scipy.fft import ifft2, fft2
 
 import numba
 
+CACHE_OPTIMIZATIONS = True
+
 class Collision():
 
     targetWavefunction = None # Implements wilson line
@@ -13,11 +15,16 @@ class Collision():
     _omega = None
     _omegaFFT = None
     _particlesProduced = None
+    _particlesProducedDeriv = None
+    _momentaMagSquared = None
+    _thetaInFourierSpace = None
     _momentaBins = None
+    _fourierHarmonics = None # This will be initialized as an empty dict to store harmonics (see __init__)
 
     _omegaExists = False
     _omegaFFTExists = False
     _particlesProducedExists = False
+    _particlesProducedDerivExists = False
     _momentaBinsExists = False
 
     def __init__(self, wavefunction1: Wavefunction, wavefunction2: Wavefunction):
@@ -75,6 +82,11 @@ class Collision():
         self.binSize = 4*np.pi/self.length
         self.kMax = 1/self.delta
         self.numBins = int(self.kMax/self.binSize)
+
+        # This has to be initialized as an empty dict within the constructor
+        # because otherwise it can retain information across separate objects
+        # (no idea how, but this fixes it)
+        self._fourierHarmonics = {}
 
     def omega(self):
         """
@@ -145,57 +157,94 @@ class Collision():
 
         return self._momentaBins
 
-    def particlesProduced(self):
+    def particlesProducedDeriv(self):
         """
-        Compute the number of particles produced at each value of momentum in `momentaBins()`.
+        Compute the derivative of particles produced (dN/d^2k) at each point on the lattice
         
         If the calculation has already been done, the result is simply returned and is not repeated.
         """
-        if self._particlesProducedExists:
-            return self._particlesProduced
+        if self._particlesProducedDerivExists:
+            return self._particlesProducedDeriv
 
-        momentaComponents, theta = _calculateMomentaOpt(self.N, self.delta)
+        self.omegaFFT()
 
-        momentaMagSquared = np.linalg.norm(momentaComponents, axis=2)**2
+        momentaComponents, self._thetaInFourierSpace = _calculateMomentaOpt(self.N, self.delta)
 
-        particleProductionZeroHarmonic = _calculatedNd2kHarmonicOpt(self.N, self.gluonDOF, momentaMagSquared, self.omegaFFT())
+        self._momentaMagSquared = np.linalg.norm(momentaComponents, axis=2)**2
 
-        # Now take the ratio of the two harmonics
-        #particleProduction = np.abs(particleProductionSecondHarmonic) / np.abs(particleProductionZeroHarmonic)
-        particleProduction = particleProductionZeroHarmonic
+        self._particlesProducedDeriv = _calculateParticlesProducedDerivOpt(self.N, self.gluonDOF, self._momentaMagSquared, self._omegaFFT)
 
-        vectorizedParticles = np.reshape(particleProduction, [self.N*self.N])
-        vectorizedTheta = np.reshape(theta, [self.N*self.N])
-        vectorizedMomentaMag = np.reshape(np.sqrt(momentaMagSquared), [self.N*self.N])
+        self._particlesProducedDerivExists = True
+
+        return self._particlesProducedDeriv
+ 
+
+    def particlesProduced(self):
+        """
+        Compute the number of particles produced N(|k|) as a function of momentum. Note that this
+        is technically the zeroth fourier harmonic, so we actually just do that (instead of
+        writing the method twice)
         
-        self._particlesProduced = np.zeros(self.numBins)
+        If the calculation has already been done, the result is simply returned and is not repeated.
+        """
+        # This one is strictly real, so we should make sure that is updated        
+        self._fourierHarmonics[0] = np.real(self.fourierHarmonic(0))
+        return self._fourierHarmonics[0]
+
+
+    def fourierHarmonic(self, harmonic: int):
+        """
+        Calculate the fourier harmonic of the particle production.
+
+        If the calculation has already been done, the result is simply returned and is not repeated.
+        """
+        # First, see if we have already calculated this harmonic
+        if harmonic in self._fourierHarmonics.keys():
+            return self._fourierHarmonics[harmonic]
+
+        # For actually calculating the harmonic, we first have to make sure we've calculated
+        # the derivative, dN/d^2k
+        # This makes sure that _momentaMagSquared, _thetaInFourierSpace and _particlesProducedDeriv
+        # all exist
+        self.particlesProducedDeriv()
+
+        # Drop all of our arrays into long 1D structure, since we will want to bin them
+        vectorizedParticleDerivs = np.reshape(self._particlesProducedDeriv, [self.N*self.N])
+        vectorizedTheta = np.reshape(self._thetaInFourierSpace, [self.N*self.N])
+        vectorizedMomentaMag = np.reshape(np.sqrt(self._momentaMagSquared), [self.N*self.N])
+       
+        # The number of particles that are produced in each bin
+        # These bins are actually just thin rings in momentum space
+        self._fourierHarmonics[harmonic] = np.zeros(self.numBins, dtype='complex')
+        # The bin sizes/bounds are calculated for elsewhere
         self.momentaBins()
 
-        desiredHarmonic = 2
+        # Ideally, these rings should be only have a thickness dk (infinitesimal)
+        # but since we have a discrete lattice, we weight the particles by their momentum
+        # (which may slightly vary) and then properly normalize
 
+        # Go through each bin and calculate (for all points in that bin):
+        # 1. Sum over |k| * dN/d^2k * exp(i * harmonic * theta)
+        # 2. Sum over |k|
+        # 3. Divide 1./2.
         for i in range(self.numBins):
             # Find which places on the lattice fall into this particular momentum bin
             # Note the use of element-wise (or bitwise) and, "&"
-            particlesInRing = vectorizedParticles[(vectorizedMomentaMag < self.binSize*(i+1)) & (vectorizedMomentaMag > self.binSize*i)]
+            particleDerivsInRing = vectorizedParticleDerivs[(vectorizedMomentaMag < self.binSize*(i+1)) & (vectorizedMomentaMag > self.binSize*i)]
+            momentaMagInRing = vectorizedMomentaMag[(vectorizedMomentaMag < self.binSize*(i+1)) & (vectorizedMomentaMag > self.binSize*i)]
             thetaInRing = vectorizedTheta[(vectorizedMomentaMag < self.binSize*(i+1)) & (vectorizedMomentaMag > self.binSize*i)]
 
-            # Zeroth harmonic is just the mean the particle values on the ring, since the argument of the exponential
-            # will always be zero
-            zerothHarmonicParticlesInRing = np.sum(particlesInRing) / self.N
+            numeratorSum = np.sum(particleDerivsInRing * momentaMagInRing * np.exp(1.j * harmonic * thetaInRing))
+            
+            denominatorSum = np.sum(momentaMagInRing)
 
-            # Any other harmonic is a little more complicated, since the divisor is now a sum of complex
-            # exponentials
-            secondHarmonicParticlesInRing = particlesInRing * np.exp(1.j * desiredHarmonic * thetaInRing)
-            secondHarmonicParticlesInRing = np.sum(secondHarmonicParticlesInRing) / np.sum(np.exp(1.j * desiredHarmonic * thetaInRing))
+            self._fourierHarmonics[harmonic][i] = numeratorSum / denominatorSum
 
-            # Now take the ratio of the second harmonic to the zeroth
-            self._particlesProduced[i] = np.abs(secondHarmonicParticlesInRing) / np.abs(zerothHarmonicParticlesInRing)
 
-        self._particlesProducedExists = True
+        return self._fourierHarmonics[harmonic]
 
-        return self._particlesProduced
 
-@numba.jit(nopython=True, cache=True)
+@numba.jit(nopython=True, cache=CACHE_OPTIMIZATIONS)
 def _calculateMomentaOpt(N, delta):
     """
     Optimized (via numba) function to calculated the position (momentum) in Fourier space of each point
@@ -233,10 +282,10 @@ def _calculateMomentaOpt(N, delta):
 
     return momentaComponents, theta
 
-@numba.jit(nopython=True, cache=True)
-def _calculatedNd2kHarmonicOpt(N, gluonDOF, momentaMagSquared, omegaFFT):
+@numba.jit(nopython=True, cache=CACHE_OPTIMIZATIONS)
+def _calculateParticlesProducedDerivOpt(N, gluonDOF, momentaMagSquared, omegaFFT):
     """
-    Optimized (via numba) function to calculate a given harmonic of dN/d^2k
+    Optimized (via numba) function to calculate dN/d^2k
 
     Parameters
     ----------
