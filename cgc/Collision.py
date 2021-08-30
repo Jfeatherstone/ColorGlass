@@ -168,9 +168,7 @@ class Collision():
 
         self.omegaFFT()
 
-        momentaComponents, self._thetaInFourierSpace = _calculateMomentaOpt(self.N, self.delta)
-
-        self._momentaMagSquared = np.linalg.norm(momentaComponents, axis=2)**2
+        self._momentaMagSquared, self._thetaInFourierSpace = _calculateMomentaOpt(self.N, self.delta)
 
         self._particlesProducedDeriv = _calculateParticlesProducedDerivOpt(self.N, self.gluonDOF, self._momentaMagSquared, self._omegaFFT)
 
@@ -234,8 +232,10 @@ class Collision():
             momentaMagInRing = vectorizedMomentaMag[(vectorizedMomentaMag < self.binSize*(i+1)) & (vectorizedMomentaMag > self.binSize*i)]
             thetaInRing = vectorizedTheta[(vectorizedMomentaMag < self.binSize*(i+1)) & (vectorizedMomentaMag > self.binSize*i)]
 
+            # @TODO: make sure this is correct
+            # Note that multiplication is done element-wise by default
             numeratorSum = np.sum(particleDerivsInRing * momentaMagInRing * np.exp(1.j * harmonic * thetaInRing))
-            
+           
             denominatorSum = np.sum(momentaMagInRing)
 
             self._fourierHarmonics[harmonic][i] = numeratorSum / denominatorSum
@@ -269,7 +269,7 @@ def _calculateMomentaOpt(N, delta):
         Relationship between x and y components at each point, or atan2(k_y, k_x)
 
     """
-    momentaComponents = np.zeros((N, N, 2))
+    momentaMagSquared = np.zeros((N, N))
     theta = np.zeros((N, N))
 
     for i in range(N):
@@ -277,10 +277,12 @@ def _calculateMomentaOpt(N, delta):
             # Note that these components are of the form:
             # k_x = 2/a sin(k_x' a / 2)
             # Though the argument of the sin is simplified a bit
-            momentaComponents[i,j] = [2/delta * np.sin(np.pi*i/N), 2/delta * np.sin(np.pi*j/N)]
-            theta[i,j] = np.arctan2(momentaComponents[i,j,1], momentaComponents[i,j,0])
+            # @TODO: make sure this is correct prefactor/argument
+            px, py = [2/delta * np.sin(np.pi*i/N), 2/delta * np.sin(np.pi*j/N)]
+            theta[i,j] = np.arctan2(py, px)
+            momentaMagSquared[i,j]  = px**2 + py**2
 
-    return momentaComponents, theta
+    return momentaMagSquared, theta
 
 @numba.jit(nopython=True, cache=CACHE_OPTIMIZATIONS)
 def _calculateParticlesProducedDerivOpt(N, gluonDOF, momentaMagSquared, omegaFFT):
