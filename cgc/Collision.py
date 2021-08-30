@@ -103,24 +103,9 @@ class Collision():
         if self._omegaExists:
             return self._omega
 
-        # 2,2 is for the 2 dimensions, x and y
-        self._omega = np.zeros([2, 2, self.gluonDOF, self.N, self.N], dtype='complex') # 2 is for two dimensions, x and y
+        self._omega = _calculateOmegaOpt(self.N, self.gluonDOF, self.delta, self.incidentWavefunction.gaugeField(), self.targetWavefunction.adjointWilsonLine())
 
-        def x_deriv(matrix, i, j):
-            return (matrix[i,(j+1)%self.N] - matrix[i,j-1]) / (2*self.delta)
-
-        def y_deriv(matrix, i, j):
-            return (matrix[(i+1)%self.N,j] - matrix[i-1,j]) / (2*self.delta)
-
-        derivs = [x_deriv, y_deriv]
-
-        for i in range(self.N):
-            for j in range(self.N):
-                for k in range(self.gluonDOF):
-                    for l in range(2): # 2 is number of dimensions
-                        for n in range(2): # 2 is number of dimensions
-                            self._omega[l,n,k,i,j] = np.sum([derivs[l](self.incidentWavefunction.gaugeField()[m], i, j) * derivs[n](self.targetWavefunction.adjointWilsonLine()[k, m], i, j) for m in range(self.gluonDOF)])
-
+        self._omegaExists = True
         return self._omega
 
 
@@ -242,6 +227,44 @@ class Collision():
 
 
         return self._fourierHarmonics[harmonic]
+
+
+@numba.jit(nopython=True)
+def _x_deriv(matrix, i, j, N, delta):
+    return (matrix[i,(j+1)%N] - matrix[i,j-1]) / (2 * delta)
+
+@numba.jit(nopython=True)
+def _y_deriv(matrix, i, j, N, delta):
+    return (matrix[(i+1)%N,j] - matrix[i-1,j]) / (2 * delta)
+
+# This doesn't work because of the above two derivative functions;
+# need to figure out a way for it to compile
+#@numba.jit(nopython=True, cache=CACHE_OPTIMIZATIONS)
+def _calculateOmegaOpt(N, gluonDOF, delta, incidentGaugeField, targetAdjointWilsonLine):
+    """
+    Calculate the field omega at each point on the lattice.
+
+    If the field already exists, it is simply returned and no calculation is done.
+
+    Returns
+    -------
+    numpy.array : shape=(2, 2, `colorCharges`**2 - 1, N, N)
+
+    """
+
+    # 2,2 is for the 2 dimensions, x and y
+    omega = np.zeros((2, 2, gluonDOF, N, N), dtype='complex') # 2 is for two dimensions, x and y
+
+    derivs = [_x_deriv, _y_deriv]
+
+    for i in range(N):
+        for j in range(N):
+            for k in range(gluonDOF):
+                for l in range(2): # 2 is number of dimensions
+                    for n in range(2): # 2 is number of dimensions
+                        omega[l,n,k,i,j] = np.sum([derivs[l](incidentGaugeField[m], i, j, N, delta) * derivs[n](targetAdjointWilsonLine[k, m], i, j, N, delta) for m in range(gluonDOF)])
+
+    return omega
 
 
 @numba.jit(nopython=True, cache=CACHE_OPTIMIZATIONS)

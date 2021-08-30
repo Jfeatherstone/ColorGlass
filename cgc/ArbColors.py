@@ -17,7 +17,7 @@ class Nucleus(Wavefunction):
     _wilsonLineExists = False
     _adjointWilsonLineExists = False
 
-    def __init__(self, colorCharges, N, delta, mu, M=.5, g=1, Ny=100):
+    def __init__(self, colorCharges, N, delta, mu, M=.5, g=1, Ny=100, rngSeed=None):
         r"""
         Dense object to be used in an instance of `cgc.Collision.Collision`.
 
@@ -47,9 +47,11 @@ class Nucleus(Wavefunction):
         Ny : positive integer (default=100)
             The longitudinal extent (in layers) of the nucleus object.
 
+        rngSeed : int (default=None)
+            Seed for the random number generator to initialize the color charge field
         """
 
-        super().__init__(colorCharges, N, delta, mu, M, g) # Super constructor
+        super().__init__(colorCharges, N, delta, mu, M, g, rngSeed) # Super constructor
         self._basis = get_basis(colorCharges)
         self.Ny = Ny
 
@@ -72,7 +74,7 @@ class Nucleus(Wavefunction):
             return self._colorChargeField
 
         # Randomly generate the intial color charge density using a gaussian distribution
-        self._colorChargeField = np.random.normal(scale=self.gaussianWidth, size=(self.Ny, self.gluonDOF, self.N, self.N))
+        self._colorChargeField = self.rng.normal(scale=self.gaussianWidth, size=(self.Ny, self.gluonDOF, self.N, self.N))
         # Make sure we don't regenerate this field since it already exists on future calls
         self._colorChargeFieldExists = True
 

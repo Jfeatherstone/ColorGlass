@@ -21,7 +21,7 @@ class Wavefunction():
     #_wilsonLineExists = False # May not be implemented depending on nucleus/proton
     #_adjointWilsonLineExists = False # May not be implemented depending on nucleus/proton
 
-    def __init__(self, colorCharges, N, delta, mu, M=.5, g=1):
+    def __init__(self, colorCharges, N, delta, mu, M=.5, g=1, rngSeed=None):
         r"""
 
         Base wavefunction class inplementing a generic color charge and gauge field
@@ -46,6 +46,9 @@ class Wavefunction():
 
         g : float (default=1)
             Parameter in the Poisson equation for the gauge field
+
+        rngSeed : int (default=None)
+            Seed for the random number generator to initialize the color charge field
         """
 
         self.N = N
@@ -67,6 +70,12 @@ class Wavefunction():
         self.xCenter = self.yCenter = self.length / 2
         self.poissonReg = (self.M2 * self.delta2) / 2
 
+        # Setup the random number generator
+        if rngSeed != None:
+            self.rng = np.random.default_rng(rngSeed)
+        else:
+            self.rng = np.random.default_rng()
+
     def colorChargeField(self):
         r"""
         Generates the color charge density 2-d field according to a gaussian distribution.
@@ -78,7 +87,7 @@ class Wavefunction():
             return self._colorChargeField
 
         # Randomly generate the intial color charge density using a gaussian distribution
-        self._colorChargeField = np.random.normal(scale=self.gaussianWidth, size=(self.gluonDOF, self.N, self.N))
+        self._colorChargeField = self.rng.normal(scale=self.gaussianWidth, size=(self.gluonDOF, self.N, self.N))
         # Make sure we don't regenerate this field since it already exists on future calls
         self._colorChargeFieldExists = True
 
@@ -144,7 +153,7 @@ class Proton(Wavefunction):
     with a width equal to `radius`.
     """
 
-    def __init__(self, colorCharges, N, delta, mu, radius, M=.5, g=1):
+    def __init__(self, colorCharges, N, delta, mu, radius, M=.5, g=1, rngSeed=None):
         """
 
         Parameters
@@ -170,9 +179,12 @@ class Proton(Wavefunction):
         g : float (default=1)
             Parameter in the Poisson equation for the gauge field
 
+        rngSeed : int (default=None)
+            Seed for the random number generator to initialize the color charge field
+
         """
 
-        super().__init__(colorCharges, N, delta, mu, M, g) # Super constructor
+        super().__init__(colorCharges, N, delta, mu, M, g, rngSeed) # Super constructor
         self.radius = radius
 
     def colorChargeField(self):
@@ -195,7 +207,7 @@ class Proton(Wavefunction):
         protonGaussianCorrection = np.array([gaussian(i*self.delta, np.arange(0, self.N)*self.delta) for i in np.arange(0, self.N)])
 
         # Randomly generate the intial color charge density using a gaussian distribution
-        self._colorChargeField = np.random.normal(scale=self.gaussianWidth, size=(self.gluonDOF, self.N, self.N))
+        self._colorChargeField = self.rng.normal(scale=self.gaussianWidth, size=(self.gluonDOF, self.N, self.N))
         self._colorChargeField *= protonGaussianCorrection # Apply the correction
 
         # Make sure we don't regenerate this field since it already exists on future calls
