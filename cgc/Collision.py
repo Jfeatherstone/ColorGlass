@@ -468,7 +468,6 @@ def _calculateMomentaOpt(N, delta):
         Relationship between x and y components at each point, or atan2(k_y, k_x)
 
     """
-    momentaMagSquared = np.zeros((N, N))
     momentaComponents = np.zeros((N, N, 2))
     theta = np.zeros((N, N))
 
