@@ -32,6 +32,9 @@
 import numpy as np
 from scipy.fft import ifft2, fft2
 
+import numba
+
+CACHE_OPTIMIZATIONS = True
 
 class Collision():
 
@@ -41,17 +44,24 @@ class Collision():
     _omega = None
     _omegaFFT = None
     _particlesProduced = None
+    _particlesProducedDeriv = None
+    _momentaMagSquared = None
+    _momentaComponents = None
+    _thetaInFourierSpace = None
     _momentaBins = None
+    _fourierHarmonics = None # This will be initialized as an empty dict to store harmonics (see __init__)
 
     _omegaExists = False
     _omegaFFTExists = False
+    _momentaComponentsExist = False
     _particlesProducedExists = False
+    _particlesProducedDerivExists = False
     _momentaBinsExists = False
 
     def __init__(self, wavefunction1: Wavefunction, wavefunction2: Wavefunction):
-        &#34;&#34;&#34;
-        Initialize a collision with two wavefunctions, presumably a nucleus and a proton. The first is expected to implement
-        the wilson line, though as long as only one of the wavefunctions has this property, it will detect the proper one.
+        r&#34;&#34;&#34;
+        Initialize a collision with two wavefunctions, presumably a nucleus and a proton. One must implement
+        the wilson line, though the order of the arguments does not matter.
 
         In the case that both wavefunctions implement the wilson line, the first (wavefunction1) will be used as such.
 
@@ -101,52 +111,63 @@ class Collision():
         
         # Variables to do with binning the momenta later on
         self.binSize = 4*np.pi/self.length
-        self.kMax = 1/self.delta
+        self.kMax = 2/self.delta
         self.numBins = int(self.kMax/self.binSize)
 
-    def omega(self):
-        &#34;&#34;&#34;
+        # This has to be initialized as an empty dict within the constructor
+        # because otherwise it can retain information across separate objects
+        # (no idea how, but this fixes it)
+        self._fourierHarmonics = {}
+
+    def omega(self, forceCalculate=False):
+        r&#34;&#34;&#34;
         Calculate the field omega at each point on the lattice.
 
         If the field already exists, it is simply returned and no calculation is done.
 
+        Parameters
+        ----------
+
+        forceCalculate : bool (default=False)
+            If the quantity has previously been calculated, the calculation will not be done
+            again unless this argument is set to True.
+
         Returns
         -------
-        numpy.array : shape=(2, 2, `colorCharges`**2 - 1, N, N)
+
+        omega : array(2, 2, `colorCharges`**2 - 1, N, N)
 
         &#34;&#34;&#34;
 
-        if self._omegaExists:
+        if self._omegaExists and not forceCalculate:
             return self._omega
 
-        # 2,2 is for the 2 dimensions, x and y
-        self._omega = np.zeros([2, 2, self.gluonDOF, self.N, self.N], dtype=&#39;complex&#39;) # 2 is for two dimensions, x and y
+        self._omega = _calculateOmegaOpt(self.N, self.gluonDOF, self.delta, self.incidentWavefunction.gaugeField(), self.targetWavefunction.adjointWilsonLine())
 
-        def x_deriv(matrix, i, j):
-            return (matrix[i,(j+1)%self.N] - matrix[i,j-1]) / (2*self.delta)
-
-        def y_deriv(matrix, i, j):
-            return (matrix[(i+1)%self.N,j] - matrix[i-1,j]) / (2*self.delta)
-
-        derivs = [x_deriv, y_deriv]
-
-        for i in range(self.N):
-            for j in range(self.N):
-                for k in range(self.gluonDOF):
-                    for l in range(2): # 2 is number of dimensions
-                        for n in range(2): # 2 is number of dimensions
-                            self._omega[l,n,k,i,j] = np.sum([derivs[l](self.incidentWavefunction.gaugeField()[m], i, j) * derivs[n](self.targetWavefunction.adjointWilsonLine()[k, m], i, j) for m in range(self.gluonDOF)])
-
+        self._omegaExists = True
         return self._omega
 
 
-    def omegaFFT(self):
-        &#34;&#34;&#34;
+    def omegaFFT(self, forceCalculate=False):
+        r&#34;&#34;&#34;
         Compute the fourier transform of the field omega on the lattice.
 
         If the fft of the field already exists, it is simply returned and no calculation is done.
+
+        Parameters
+        ----------
+
+        forceCalculate : bool (default=False)
+            If the quantity has previously been calculated, the calculation will not be done
+            again unless this argument is set to True.
+
+        Returns
+        -------
+
+        omegaFFT : array(2, 2, `colorCharges`**2 - 1, N, N)
+
         &#34;&#34;&#34;
-        if self._omegaFFTExists:
+        if self._omegaFFTExists and not forceCalculate:
             return self._omegaFFT
 
         # Make sure omega exists
@@ -158,14 +179,32 @@ class Collision():
         return self._omegaFFT
 
 
-    def momentaBins(self):
-        &#34;&#34;&#34;
+    def momentaBins(self, forceCalculate=False):
+        r&#34;&#34;&#34;
         Compute the range of momenta at which particles will be created based on the dimensions of the lattice.
 
+        The exact values are:
+
+        - \( k_{max} = 2 / \Delta\)
+        - \( w_k = 4 \pi / L \)
+
         If the bins already exist, they are simply returned and no calculation is done.
+
+
+        Parameters
+        ----------
+
+        forceCalculate : bool (default=False)
+            If the quantity has previously been calculated, the calculation will not be done
+            again unless this argument is set to True.
+
+        Returns
+        -------
+
+        momentaBins : array(numBins = L / (delta 2 pi))
         &#34;&#34;&#34;
 
-        if self._momentaBinsExists:
+        if self._momentaBinsExists and not forceCalculate:
             return self._momentaBins
 
         self._momentaBins = [i*self.binSize for i in range(self.numBins)]
@@ -173,61 +212,359 @@ class Collision():
 
         return self._momentaBins
 
-    def particlesProduced(self):
+
+    def momentaComponents(self, forceCalculate=False):
+        r&#34;&#34;&#34;
+        Compute the components of the momentum at each point on the lattice, according to:
+
+        $$ (k_x, k_y) = \frac{2}{\Delta} \left( \sin\left( \frac{\pi i}{N} \right), \sin\left( \frac{\pi j}{N} \right) \right) $$
+
+        where \(i\) and \(j\) index the \(x\) and \(y\) directions in real space, respectively.
+
+        If the calculation has already been done, the result is simply returned and is not repeated.
+
+
+        Parameters
+        ----------
+
+        forceCalculate : bool (default=False)
+            If the quantity has previously been calculated, the calculation will not be done
+            again unless this argument is set to True.
+
+        Returns
+        -------
+
+        momentaComponents : array(N, N, 2)
         &#34;&#34;&#34;
-        Compute the number of particles produced at each value of momentum in `momentaBins()`.
+
+        if self._momentaComponentsExist and not forceCalculate:
+            return self._momentaComponents
+
+        self._momentaComponents, self._thetaInFourierSpace = _calculateMomentaOpt(self.N, self.delta)
+        self._momentaMagSquared = np.linalg.norm(self._momentaComponents, axis=2)**2
+
+        self._momentaComponentsExist = True
+
+        return self._momentaComponents
+
+
+    def momentaMagnitudeSquared(self, forceCalculate=False):
+        r&#34;&#34;&#34;
+        Compute the magnitude of the momentum at each point on the lattice, according to:
+
+        $$ |k| = \sqrt{k_x^2 + k_y^2} $$
+
+        $$ (k_x, k_y) = \frac{2}{\Delta} \left( \sin\left( \frac{\pi i}{N} \right), \sin\left( \frac{\pi j}{N} \right) \right) $$
+
+        where \(i\) and \(j\) index the \(x\) and \(y\) directions in real space, respectively.
+
+        If the calculation has already been done, the result is simply returned and is not repeated.
+
+
+        Parameters
+        ----------
+
+        forceCalculate : bool (default=False)
+            If the quantity has previously been calculated, the calculation will not be done
+            again unless this argument is set to True.
+
+        Returns
+        -------
+
+        momentaComponents : array(N, N)
+        &#34;&#34;&#34;
+
+        if self._momentaComponentsExist and not forceCalculate:
+            return self._momentaMagSquared
+
+        self._momentaComponents, self._thetaInFourierSpace = _calculateMomentaOpt(self.N, self.delta)
+        self._momentaMagSquared = np.linalg.norm(self._momentaComponents, axis=2)**2
+
+        self._momentaComponentsExist = True
+
+        return self._momentaMagSquared
+
+
+    def particlesProducedDeriv(self, forceCalculate=False):
+        r&#34;&#34;&#34;
+        Compute the derivative of particles produced (\( \frac{d^2 N}{d^2 k} \)) at each point on the lattice
         
         If the calculation has already been done, the result is simply returned and is not repeated.
-        &#34;&#34;&#34;
-        if self._particlesProducedExists:
-            return self._particlesProduced
 
-        momentaMagSquared = np.zeros([self.N, self.N])
+
+        Parameters
+        ----------
+
+        forceCalculate : bool (default=False)
+            If the quantity has previously been calculated, the calculation will not be done
+            again unless this argument is set to True.
+
+        Returns
+        -------
+
+        particlesProducedDeriv : array(N, N)
+        &#34;&#34;&#34;
+        if self._particlesProducedDerivExists and not forceCalculate:
+            return self._particlesProducedDeriv
+
+        # Make sure these quantities exist
+        self.omegaFFT()
+        self.momentaMagnitudeSquared() # This also calculates thetaInFourierSpace and momentaComponents
+
+        self._particlesProducedDeriv = _calculateParticlesProducedDerivOpt(self.N, self.gluonDOF, self._momentaMagSquared, self._omegaFFT)
+
+        self._particlesProducedDerivExists = True
+
+        return self._particlesProducedDeriv
+ 
+
+    def particlesProduced(self, forceCalculate=False):
+        r&#34;&#34;&#34;
+        Compute the number of particles produced \(N(|k|)\) as a function of momentum. Note that this
+        is technically the zeroth fourier harmonic, so this actually just calls the
+        cgc.Collision.fourierHarmonic() function.
+
+        The particles are binned according to cgc.Collision.momentaBins().
+       
+        Most likely will be plotted against cgc.Collision.momentaBins().
+
+        If the calculation has already been done, the result is simply returned and is not repeated.
+
+
+        Parameters
+        ----------
+
+        forceCalculate : bool (default=False)
+            If the quantity has previously been calculated, the calculation will not be done
+            again unless this argument is set to True.
+
+        Returns
+        -------
+
+        particlesProduced : array(numBins = L / (delta 2 pi))
+        &#34;&#34;&#34;
+        # This one is strictly real, so we should make sure that is updated        
+        self._fourierHarmonics[0] = np.real(self.fourierHarmonic(0, forceCalculate))
+        return self._fourierHarmonics[0]
+
+
+    def fourierHarmonic(self, harmonic: int, forceCalculate=False):
+        r&#34;&#34;&#34;
+        Calculate the fourier harmonic of the particle production as:
+
+        $$ v_n = \frac{ \sum_{(i,j)\in [k, k+ \Delta k]} |k| \frac{d^2 N}{d^2 k} e^{i n \theta }} { \sum_{(i,j)\in [k, k+ \Delta k]} |k| } $$
+
+        If the calculation has already been done, the result is simply returned and is not repeated.
+
+
+        Parameters
+        ----------
+
+        forceCalculate : bool (default=False)
+            If the quantity has previously been calculated, the calculation will not be done
+            again unless this argument is set to True.
+
+        Returns
+        -------
+
+        particlesProduced : array(numBins = L / (delta 2 pi))
+        &#34;&#34;&#34;
+        # First, see if we have already calculated this harmonic
+        if harmonic in self._fourierHarmonics.keys() and not forceCalculate:
+            return self._fourierHarmonics[harmonic]
+
+        # For actually calculating the harmonic, we first have to make sure we&#39;ve calculated
+        # the derivative, dN/d^2k
+        # This makes sure that _momentaMagSquared, _thetaInFourierSpace and _particlesProducedDeriv
+        # all exist
+        self.particlesProducedDeriv()
+
+        # Drop all of our arrays into long 1D structure, since we will want to bin them
+        vectorizedParticleDerivs = np.reshape(self._particlesProducedDeriv, [self.N*self.N])
+        vectorizedTheta = np.reshape(self._thetaInFourierSpace, [self.N*self.N])
+        vectorizedMomentaMag = np.reshape(np.sqrt(self._momentaMagSquared), [self.N*self.N])
+       
+        # The number of particles that are produced in each bin
+        # These bins are actually just thin rings in momentum space
+        self._fourierHarmonics[harmonic] = np.zeros(self.numBins, dtype=&#39;complex&#39;)
+        # The bin sizes/bounds are calculated for elsewhere
+        self.momentaBins()
+
+        momentaNormalization = np.zeros(self.numBins)
 
         for i in range(self.N):
             for j in range(self.N):
-                momentaMagSquared[i,j] = 4 / self.delta2 * (np.sin((2*np.pi*i/self.length)*self.delta/2)**2 + np.sin((2*np.pi*j/self.length)*self.delta/2)**2)
+                k = np.sqrt(self._momentaMagSquared[i,j])
+                indexK = int(np.floor(k / self.binSize)) 
+                # Anything greater than the highest bin just gets added to the last bin
+                # @TODO: Check if this is what we should be doing
+                indexK = min(indexK, self.numBins-1)
 
-        particleProduction = np.zeros([self.N, self.N])
+                self._fourierHarmonics[harmonic][indexK] += self._particlesProducedDeriv[i,j] * k * np.exp(1.j * self._thetaInFourierSpace[i,j] * harmonic)
+                momentaNormalization[indexK] += k
+                
 
-        # Make sure omegaFFT exists
-        self.omegaFFT()
-
-        # # 2D Levi-Cevita symbol
-        #Matrix Representation
-        LCS = np.array([[0,1],[-1,0]])
-
-        # # 2D Delta function
-        #Matrix Representation
-        KDF = np.array([[1,0],[0,1]])
-
-        for y in range(self.N):
-            for x in range(self.N):
-                # To prevent any divide by zero errors
-                if momentaMagSquared[y,x] == 0:
-                    continue
-
-                for i in range(2):
-                    for j in range(2):
-                        for l in range(2):
-                            for m in range(2):
-
-                                for a in range(self.gluonDOF):
-                                    particleProduction[y,x] += np.real(2/(2*np.pi)**3 / momentaMagSquared[y,x] * (KDF[i,j]*KDF[l,m] + LCS[i,j]*LCS[l,m]) * self._omegaFFT[i,j,a,y,x] * np.conj(self._omegaFFT[l,m,a,y,x]))
-
-        vectorizedParticles = np.reshape(particleProduction, [self.N*self.N])
-        vectorizedMomentaMagSquared = np.reshape(np.sqrt(momentaMagSquared), [self.N*self.N])
-
-        self._particlesProduced = np.zeros(self.numBins)
-        self.momentaBins()
-
-        # Note the use of element-wise (or bitwise) and, &#34;&amp;&#34;
         for i in range(self.numBins):
-            self._particlesProduced[i] = np.mean(vectorizedParticles[(vectorizedMomentaMagSquared &lt; self.binSize*(i+1)) &amp; (vectorizedMomentaMagSquared &gt; self.binSize*i)])
+            self._fourierHarmonics[harmonic][i] /= momentaNormalization[i]
 
-        self._particlesProducedExists = True
+        # Ideally, these rings should be only have a thickness dk (infinitesimal)
+        # but since we have a discrete lattice, we weight the particles by their momentum
+        # (which may slightly vary) and then properly normalize
 
-        return self._particlesProduced</code></pre>
+        # Go through each bin and calculate (for all points in that bin):
+        # 1. Sum over |k| * dN/d^2k * exp(i * harmonic * theta)
+        # 2. Sum over |k|
+        # 3. Divide 1./2.
+        #for i in range(self.numBins):
+        #    # Find which places on the lattice fall into this particular momentum bin
+        #    # Note the use of element-wise (or bitwise) and, &#34;&amp;&#34;
+        #    particleDerivsInRing = vectorizedParticleDerivs[(vectorizedMomentaMag &lt; self.binSize*(i+1)) &amp; (vectorizedMomentaMag &gt; self.binSize*i)]
+        #    momentaMagInRing = vectorizedMomentaMag[(vectorizedMomentaMag &lt; self.binSize*(i+1)) &amp; (vectorizedMomentaMag &gt; self.binSize*i)]
+        #    thetaInRing = vectorizedTheta[(vectorizedMomentaMag &lt; self.binSize*(i+1)) &amp; (vectorizedMomentaMag &gt; self.binSize*i)]
+
+        #    # @TODO: make sure this is correct
+        #    # Note that multiplication is done element-wise by default
+        #    numeratorSum = np.sum(particleDerivsInRing * momentaMagInRing * np.exp(1.j * harmonic * thetaInRing))
+           
+        #    denominatorSum = np.sum(momentaMagInRing)
+
+        #    self._fourierHarmonics[harmonic][i] = numeratorSum / denominatorSum
+
+
+        return self._fourierHarmonics[harmonic]
+
+
+@numba.jit(nopython=True)
+def _x_deriv(matrix, i, j, N, delta):
+    return (matrix[i,(j+1)%N] - matrix[i,j-1]) / (2 * delta)
+
+@numba.jit(nopython=True)
+def _y_deriv(matrix, i, j, N, delta):
+    return (matrix[(i+1)%N,j] - matrix[i-1,j]) / (2 * delta)
+
+# This doesn&#39;t work because of the above two derivative functions;
+# need to figure out a way for it to compile
+#@numba.jit(nopython=True, cache=CACHE_OPTIMIZATIONS)
+def _calculateOmegaOpt(N, gluonDOF, delta, incidentGaugeField, targetAdjointWilsonLine):
+    &#34;&#34;&#34;
+    Calculate the field omega at each point on the lattice.
+
+    If the field already exists, it is simply returned and no calculation is done.
+
+    Returns
+    -------
+    numpy.array : shape=(2, 2, `colorCharges`**2 - 1, N, N)
+
+    &#34;&#34;&#34;
+
+    # 2,2 is for the 2 dimensions, x and y
+    omega = np.zeros((2, 2, gluonDOF, N, N), dtype=&#39;complex&#39;) # 2 is for two dimensions, x and y
+
+    derivs = [_x_deriv, _y_deriv]
+
+    for i in range(N):
+        for j in range(N):
+            for k in range(gluonDOF):
+                for l in range(2): # 2 is number of dimensions
+                    for n in range(2): # 2 is number of dimensions
+                        omega[l,n,k,i,j] = np.sum([derivs[l](incidentGaugeField[m], i, j, N, delta) * derivs[n](targetAdjointWilsonLine[k, m], i, j, N, delta) for m in range(gluonDOF)])
+
+    return omega
+
+
+@numba.jit(nopython=True, cache=CACHE_OPTIMIZATIONS)
+def _calculateMomentaOpt(N, delta):
+    &#34;&#34;&#34;
+    Optimized (via numba) function to calculated the position (momentum) in Fourier space of each point
+
+    Parameters
+    ----------
+
+    N : int
+        Size of the lattice
+
+    delta : double
+        Spacing between each point
+
+    Returns
+    -------
+    (momentaComponents, theta)
+
+    momentaComponents : array(N, N, 2)
+        x and y components of the momentum at each point
+
+    theta : array(N, N)
+        Relationship between x and y components at each point, or atan2(k_y, k_x)
+
+    &#34;&#34;&#34;
+    momentaMagSquared = np.zeros((N, N))
+    momentaComponents = np.zeros((N, N, 2))
+    theta = np.zeros((N, N))
+
+    for i in range(N):
+        for j in range(N):
+            # Note that these components are of the form:
+            # k_x = 2/a sin(k_x&#39; a / 2)
+            # Though the argument of the sin is simplified a bit
+            # @TODO: make sure this is correct prefactor/argument
+            momentaComponents[i,j] = [2/delta * np.sin(np.pi*i/N), 2/delta * np.sin(np.pi*j/N)]
+            theta[i,j] = np.arctan2(momentaComponents[i,j,1], momentaComponents[i,j,0])
+
+    return momentaComponents, theta
+
+@numba.jit(nopython=True, cache=CACHE_OPTIMIZATIONS)
+def _calculateParticlesProducedDerivOpt(N, gluonDOF, momentaMagSquared, omegaFFT):
+    &#34;&#34;&#34;
+    Optimized (via numba) function to calculate dN/d^2k
+
+    Parameters
+    ----------
+
+    N : int
+        The system size
+
+    gluonDOF : int
+        The number of gluon degrees of freedom ((possible color charges)^2 - 1)
+
+    momentaMagSquared : array(N, N)
+        The magnitude of the momentum at each point, likely calculated (in part) with _calculateMomentaOpt()
+
+    omegaFFT : array(2, 2, gluonDOF, N, N)
+        Previously calculated omega array
+
+    Returns
+    -------
+    particleProduction : array(N, N)
+        The number of particles produced at each point on the momentum lattice
+
+    &#34;&#34;&#34;
+    # Where we will calculate dN/d^2k 
+    particleProduction = np.zeros((N,N))
+
+    # # 2D Levi-Cevita symbol
+    LCS = np.array([[0,1],[-1,0]])
+
+    # # 2D Delta function
+    KDF = np.array([[1,0],[0,1]])
+
+    for y in range(N):
+        for x in range(N):
+            # To prevent any divide by zero errors
+            if momentaMagSquared[y,x] == 0:
+                continue
+            
+            # All of these 2s are for our two dimensions, x and y
+            for i in range(2):
+                for j in range(2):
+                    for l in range(2):
+                        for m in range(2):
+
+                            for a in range(gluonDOF):
+                                particleProduction[y,x] += np.real(2/(2*np.pi)**3 / momentaMagSquared[y,x] * (
+                                    (KDF[i,j]*KDF[l,m] + LCS[i,j]*LCS[l,m])) * (
+                                        omegaFFT[i,j,a,y,x] * np.conj(omegaFFT[l,m,a,y,x])))
+
+    return particleProduction</code></pre>
 </details>
 </section>
 <section>
@@ -244,8 +581,8 @@ class Collision():
 <span>(</span><span>wavefunction1: <a title="cgc.Wavefunction.Wavefunction" href="Wavefunction.html#cgc.Wavefunction.Wavefunction">Wavefunction</a>, wavefunction2: <a title="cgc.Wavefunction.Wavefunction" href="Wavefunction.html#cgc.Wavefunction.Wavefunction">Wavefunction</a>)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Initialize a collision with two wavefunctions, presumably a nucleus and a proton. The first is expected to implement
-the wilson line, though as long as only one of the wavefunctions has this property, it will detect the proper one.</p>
+<div class="desc"><p>Initialize a collision with two wavefunctions, presumably a nucleus and a proton. One must implement
+the wilson line, though the order of the arguments does not matter.</p>
 <p>In the case that both wavefunctions implement the wilson line, the first (wavefunction1) will be used as such.</p>
 <p>In the case that neither implement the wilson line, an exception will be raised.</p>
 <h2 id="parameters">Parameters</h2>
@@ -267,17 +604,24 @@ the wilson line, though as long as only one of the wavefunctions has this proper
     _omega = None
     _omegaFFT = None
     _particlesProduced = None
+    _particlesProducedDeriv = None
+    _momentaMagSquared = None
+    _momentaComponents = None
+    _thetaInFourierSpace = None
     _momentaBins = None
+    _fourierHarmonics = None # This will be initialized as an empty dict to store harmonics (see __init__)
 
     _omegaExists = False
     _omegaFFTExists = False
+    _momentaComponentsExist = False
     _particlesProducedExists = False
+    _particlesProducedDerivExists = False
     _momentaBinsExists = False
 
     def __init__(self, wavefunction1: Wavefunction, wavefunction2: Wavefunction):
-        &#34;&#34;&#34;
-        Initialize a collision with two wavefunctions, presumably a nucleus and a proton. The first is expected to implement
-        the wilson line, though as long as only one of the wavefunctions has this property, it will detect the proper one.
+        r&#34;&#34;&#34;
+        Initialize a collision with two wavefunctions, presumably a nucleus and a proton. One must implement
+        the wilson line, though the order of the arguments does not matter.
 
         In the case that both wavefunctions implement the wilson line, the first (wavefunction1) will be used as such.
 
@@ -327,52 +671,63 @@ the wilson line, though as long as only one of the wavefunctions has this proper
         
         # Variables to do with binning the momenta later on
         self.binSize = 4*np.pi/self.length
-        self.kMax = 1/self.delta
+        self.kMax = 2/self.delta
         self.numBins = int(self.kMax/self.binSize)
 
-    def omega(self):
-        &#34;&#34;&#34;
+        # This has to be initialized as an empty dict within the constructor
+        # because otherwise it can retain information across separate objects
+        # (no idea how, but this fixes it)
+        self._fourierHarmonics = {}
+
+    def omega(self, forceCalculate=False):
+        r&#34;&#34;&#34;
         Calculate the field omega at each point on the lattice.
 
         If the field already exists, it is simply returned and no calculation is done.
 
+        Parameters
+        ----------
+
+        forceCalculate : bool (default=False)
+            If the quantity has previously been calculated, the calculation will not be done
+            again unless this argument is set to True.
+
         Returns
         -------
-        numpy.array : shape=(2, 2, `colorCharges`**2 - 1, N, N)
+
+        omega : array(2, 2, `colorCharges`**2 - 1, N, N)
 
         &#34;&#34;&#34;
 
-        if self._omegaExists:
+        if self._omegaExists and not forceCalculate:
             return self._omega
 
-        # 2,2 is for the 2 dimensions, x and y
-        self._omega = np.zeros([2, 2, self.gluonDOF, self.N, self.N], dtype=&#39;complex&#39;) # 2 is for two dimensions, x and y
+        self._omega = _calculateOmegaOpt(self.N, self.gluonDOF, self.delta, self.incidentWavefunction.gaugeField(), self.targetWavefunction.adjointWilsonLine())
 
-        def x_deriv(matrix, i, j):
-            return (matrix[i,(j+1)%self.N] - matrix[i,j-1]) / (2*self.delta)
-
-        def y_deriv(matrix, i, j):
-            return (matrix[(i+1)%self.N,j] - matrix[i-1,j]) / (2*self.delta)
-
-        derivs = [x_deriv, y_deriv]
-
-        for i in range(self.N):
-            for j in range(self.N):
-                for k in range(self.gluonDOF):
-                    for l in range(2): # 2 is number of dimensions
-                        for n in range(2): # 2 is number of dimensions
-                            self._omega[l,n,k,i,j] = np.sum([derivs[l](self.incidentWavefunction.gaugeField()[m], i, j) * derivs[n](self.targetWavefunction.adjointWilsonLine()[k, m], i, j) for m in range(self.gluonDOF)])
-
+        self._omegaExists = True
         return self._omega
 
 
-    def omegaFFT(self):
-        &#34;&#34;&#34;
+    def omegaFFT(self, forceCalculate=False):
+        r&#34;&#34;&#34;
         Compute the fourier transform of the field omega on the lattice.
 
         If the fft of the field already exists, it is simply returned and no calculation is done.
+
+        Parameters
+        ----------
+
+        forceCalculate : bool (default=False)
+            If the quantity has previously been calculated, the calculation will not be done
+            again unless this argument is set to True.
+
+        Returns
+        -------
+
+        omegaFFT : array(2, 2, `colorCharges`**2 - 1, N, N)
+
         &#34;&#34;&#34;
-        if self._omegaFFTExists:
+        if self._omegaFFTExists and not forceCalculate:
             return self._omegaFFT
 
         # Make sure omega exists
@@ -384,14 +739,32 @@ the wilson line, though as long as only one of the wavefunctions has this proper
         return self._omegaFFT
 
 
-    def momentaBins(self):
-        &#34;&#34;&#34;
+    def momentaBins(self, forceCalculate=False):
+        r&#34;&#34;&#34;
         Compute the range of momenta at which particles will be created based on the dimensions of the lattice.
 
+        The exact values are:
+
+        - \( k_{max} = 2 / \Delta\)
+        - \( w_k = 4 \pi / L \)
+
         If the bins already exist, they are simply returned and no calculation is done.
+
+
+        Parameters
+        ----------
+
+        forceCalculate : bool (default=False)
+            If the quantity has previously been calculated, the calculation will not be done
+            again unless this argument is set to True.
+
+        Returns
+        -------
+
+        momentaBins : array(numBins = L / (delta 2 pi))
         &#34;&#34;&#34;
 
-        if self._momentaBinsExists:
+        if self._momentaBinsExists and not forceCalculate:
             return self._momentaBins
 
         self._momentaBins = [i*self.binSize for i in range(self.numBins)]
@@ -399,61 +772,226 @@ the wilson line, though as long as only one of the wavefunctions has this proper
 
         return self._momentaBins
 
-    def particlesProduced(self):
+
+    def momentaComponents(self, forceCalculate=False):
+        r&#34;&#34;&#34;
+        Compute the components of the momentum at each point on the lattice, according to:
+
+        $$ (k_x, k_y) = \frac{2}{\Delta} \left( \sin\left( \frac{\pi i}{N} \right), \sin\left( \frac{\pi j}{N} \right) \right) $$
+
+        where \(i\) and \(j\) index the \(x\) and \(y\) directions in real space, respectively.
+
+        If the calculation has already been done, the result is simply returned and is not repeated.
+
+
+        Parameters
+        ----------
+
+        forceCalculate : bool (default=False)
+            If the quantity has previously been calculated, the calculation will not be done
+            again unless this argument is set to True.
+
+        Returns
+        -------
+
+        momentaComponents : array(N, N, 2)
         &#34;&#34;&#34;
-        Compute the number of particles produced at each value of momentum in `momentaBins()`.
+
+        if self._momentaComponentsExist and not forceCalculate:
+            return self._momentaComponents
+
+        self._momentaComponents, self._thetaInFourierSpace = _calculateMomentaOpt(self.N, self.delta)
+        self._momentaMagSquared = np.linalg.norm(self._momentaComponents, axis=2)**2
+
+        self._momentaComponentsExist = True
+
+        return self._momentaComponents
+
+
+    def momentaMagnitudeSquared(self, forceCalculate=False):
+        r&#34;&#34;&#34;
+        Compute the magnitude of the momentum at each point on the lattice, according to:
+
+        $$ |k| = \sqrt{k_x^2 + k_y^2} $$
+
+        $$ (k_x, k_y) = \frac{2}{\Delta} \left( \sin\left( \frac{\pi i}{N} \right), \sin\left( \frac{\pi j}{N} \right) \right) $$
+
+        where \(i\) and \(j\) index the \(x\) and \(y\) directions in real space, respectively.
+
+        If the calculation has already been done, the result is simply returned and is not repeated.
+
+
+        Parameters
+        ----------
+
+        forceCalculate : bool (default=False)
+            If the quantity has previously been calculated, the calculation will not be done
+            again unless this argument is set to True.
+
+        Returns
+        -------
+
+        momentaComponents : array(N, N)
+        &#34;&#34;&#34;
+
+        if self._momentaComponentsExist and not forceCalculate:
+            return self._momentaMagSquared
+
+        self._momentaComponents, self._thetaInFourierSpace = _calculateMomentaOpt(self.N, self.delta)
+        self._momentaMagSquared = np.linalg.norm(self._momentaComponents, axis=2)**2
+
+        self._momentaComponentsExist = True
+
+        return self._momentaMagSquared
+
+
+    def particlesProducedDeriv(self, forceCalculate=False):
+        r&#34;&#34;&#34;
+        Compute the derivative of particles produced (\( \frac{d^2 N}{d^2 k} \)) at each point on the lattice
         
         If the calculation has already been done, the result is simply returned and is not repeated.
-        &#34;&#34;&#34;
-        if self._particlesProducedExists:
-            return self._particlesProduced
 
-        momentaMagSquared = np.zeros([self.N, self.N])
+
+        Parameters
+        ----------
+
+        forceCalculate : bool (default=False)
+            If the quantity has previously been calculated, the calculation will not be done
+            again unless this argument is set to True.
+
+        Returns
+        -------
+
+        particlesProducedDeriv : array(N, N)
+        &#34;&#34;&#34;
+        if self._particlesProducedDerivExists and not forceCalculate:
+            return self._particlesProducedDeriv
+
+        # Make sure these quantities exist
+        self.omegaFFT()
+        self.momentaMagnitudeSquared() # This also calculates thetaInFourierSpace and momentaComponents
+
+        self._particlesProducedDeriv = _calculateParticlesProducedDerivOpt(self.N, self.gluonDOF, self._momentaMagSquared, self._omegaFFT)
+
+        self._particlesProducedDerivExists = True
+
+        return self._particlesProducedDeriv
+ 
+
+    def particlesProduced(self, forceCalculate=False):
+        r&#34;&#34;&#34;
+        Compute the number of particles produced \(N(|k|)\) as a function of momentum. Note that this
+        is technically the zeroth fourier harmonic, so this actually just calls the
+        cgc.Collision.fourierHarmonic() function.
+
+        The particles are binned according to cgc.Collision.momentaBins().
+       
+        Most likely will be plotted against cgc.Collision.momentaBins().
+
+        If the calculation has already been done, the result is simply returned and is not repeated.
+
+
+        Parameters
+        ----------
+
+        forceCalculate : bool (default=False)
+            If the quantity has previously been calculated, the calculation will not be done
+            again unless this argument is set to True.
+
+        Returns
+        -------
+
+        particlesProduced : array(numBins = L / (delta 2 pi))
+        &#34;&#34;&#34;
+        # This one is strictly real, so we should make sure that is updated        
+        self._fourierHarmonics[0] = np.real(self.fourierHarmonic(0, forceCalculate))
+        return self._fourierHarmonics[0]
+
+
+    def fourierHarmonic(self, harmonic: int, forceCalculate=False):
+        r&#34;&#34;&#34;
+        Calculate the fourier harmonic of the particle production as:
+
+        $$ v_n = \frac{ \sum_{(i,j)\in [k, k+ \Delta k]} |k| \frac{d^2 N}{d^2 k} e^{i n \theta }} { \sum_{(i,j)\in [k, k+ \Delta k]} |k| } $$
+
+        If the calculation has already been done, the result is simply returned and is not repeated.
+
+
+        Parameters
+        ----------
+
+        forceCalculate : bool (default=False)
+            If the quantity has previously been calculated, the calculation will not be done
+            again unless this argument is set to True.
+
+        Returns
+        -------
+
+        particlesProduced : array(numBins = L / (delta 2 pi))
+        &#34;&#34;&#34;
+        # First, see if we have already calculated this harmonic
+        if harmonic in self._fourierHarmonics.keys() and not forceCalculate:
+            return self._fourierHarmonics[harmonic]
+
+        # For actually calculating the harmonic, we first have to make sure we&#39;ve calculated
+        # the derivative, dN/d^2k
+        # This makes sure that _momentaMagSquared, _thetaInFourierSpace and _particlesProducedDeriv
+        # all exist
+        self.particlesProducedDeriv()
+
+        # Drop all of our arrays into long 1D structure, since we will want to bin them
+        vectorizedParticleDerivs = np.reshape(self._particlesProducedDeriv, [self.N*self.N])
+        vectorizedTheta = np.reshape(self._thetaInFourierSpace, [self.N*self.N])
+        vectorizedMomentaMag = np.reshape(np.sqrt(self._momentaMagSquared), [self.N*self.N])
+       
+        # The number of particles that are produced in each bin
+        # These bins are actually just thin rings in momentum space
+        self._fourierHarmonics[harmonic] = np.zeros(self.numBins, dtype=&#39;complex&#39;)
+        # The bin sizes/bounds are calculated for elsewhere
+        self.momentaBins()
+
+        momentaNormalization = np.zeros(self.numBins)
 
         for i in range(self.N):
             for j in range(self.N):
-                momentaMagSquared[i,j] = 4 / self.delta2 * (np.sin((2*np.pi*i/self.length)*self.delta/2)**2 + np.sin((2*np.pi*j/self.length)*self.delta/2)**2)
+                k = np.sqrt(self._momentaMagSquared[i,j])
+                indexK = int(np.floor(k / self.binSize)) 
+                # Anything greater than the highest bin just gets added to the last bin
+                # @TODO: Check if this is what we should be doing
+                indexK = min(indexK, self.numBins-1)
 
-        particleProduction = np.zeros([self.N, self.N])
+                self._fourierHarmonics[harmonic][indexK] += self._particlesProducedDeriv[i,j] * k * np.exp(1.j * self._thetaInFourierSpace[i,j] * harmonic)
+                momentaNormalization[indexK] += k
+                
 
-        # Make sure omegaFFT exists
-        self.omegaFFT()
-
-        # # 2D Levi-Cevita symbol
-        #Matrix Representation
-        LCS = np.array([[0,1],[-1,0]])
-
-        # # 2D Delta function
-        #Matrix Representation
-        KDF = np.array([[1,0],[0,1]])
-
-        for y in range(self.N):
-            for x in range(self.N):
-                # To prevent any divide by zero errors
-                if momentaMagSquared[y,x] == 0:
-                    continue
-
-                for i in range(2):
-                    for j in range(2):
-                        for l in range(2):
-                            for m in range(2):
-
-                                for a in range(self.gluonDOF):
-                                    particleProduction[y,x] += np.real(2/(2*np.pi)**3 / momentaMagSquared[y,x] * (KDF[i,j]*KDF[l,m] + LCS[i,j]*LCS[l,m]) * self._omegaFFT[i,j,a,y,x] * np.conj(self._omegaFFT[l,m,a,y,x]))
-
-        vectorizedParticles = np.reshape(particleProduction, [self.N*self.N])
-        vectorizedMomentaMagSquared = np.reshape(np.sqrt(momentaMagSquared), [self.N*self.N])
-
-        self._particlesProduced = np.zeros(self.numBins)
-        self.momentaBins()
-
-        # Note the use of element-wise (or bitwise) and, &#34;&amp;&#34;
         for i in range(self.numBins):
-            self._particlesProduced[i] = np.mean(vectorizedParticles[(vectorizedMomentaMagSquared &lt; self.binSize*(i+1)) &amp; (vectorizedMomentaMagSquared &gt; self.binSize*i)])
+            self._fourierHarmonics[harmonic][i] /= momentaNormalization[i]
 
-        self._particlesProducedExists = True
+        # Ideally, these rings should be only have a thickness dk (infinitesimal)
+        # but since we have a discrete lattice, we weight the particles by their momentum
+        # (which may slightly vary) and then properly normalize
 
-        return self._particlesProduced</code></pre>
+        # Go through each bin and calculate (for all points in that bin):
+        # 1. Sum over |k| * dN/d^2k * exp(i * harmonic * theta)
+        # 2. Sum over |k|
+        # 3. Divide 1./2.
+        #for i in range(self.numBins):
+        #    # Find which places on the lattice fall into this particular momentum bin
+        #    # Note the use of element-wise (or bitwise) and, &#34;&amp;&#34;
+        #    particleDerivsInRing = vectorizedParticleDerivs[(vectorizedMomentaMag &lt; self.binSize*(i+1)) &amp; (vectorizedMomentaMag &gt; self.binSize*i)]
+        #    momentaMagInRing = vectorizedMomentaMag[(vectorizedMomentaMag &lt; self.binSize*(i+1)) &amp; (vectorizedMomentaMag &gt; self.binSize*i)]
+        #    thetaInRing = vectorizedTheta[(vectorizedMomentaMag &lt; self.binSize*(i+1)) &amp; (vectorizedMomentaMag &gt; self.binSize*i)]
+
+        #    # @TODO: make sure this is correct
+        #    # Note that multiplication is done element-wise by default
+        #    numeratorSum = np.sum(particleDerivsInRing * momentaMagInRing * np.exp(1.j * harmonic * thetaInRing))
+           
+        #    denominatorSum = np.sum(momentaMagInRing)
+
+        #    self._fourierHarmonics[harmonic][i] = numeratorSum / denominatorSum
+
+
+        return self._fourierHarmonics[harmonic]</code></pre>
 </details>
 <h3>Class variables</h3>
 <dl>
@@ -468,24 +1006,166 @@ the wilson line, though as long as only one of the wavefunctions has this proper
 </dl>
 <h3>Methods</h3>
 <dl>
-<dt id="cgc.Collision.Collision.momentaBins"><code class="name flex">
-<span>def <span class="ident">momentaBins</span></span>(<span>self)</span>
+<dt id="cgc.Collision.Collision.fourierHarmonic"><code class="name flex">
+<span>def <span class="ident">fourierHarmonic</span></span>(<span>self, harmonic: int, forceCalculate=False)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Compute the range of momenta at which particles will be created based on the dimensions of the lattice.</p>
-<p>If the bins already exist, they are simply returned and no calculation is done.</p></div>
+<div class="desc"><p>Calculate the fourier harmonic of the particle production as:</p>
+<p><span><span class="MathJax_Preview"> v_n = \frac{ \sum_{(i,j)\in [k, k+ \Delta k]} |k| \frac{d^2 N}{d^2 k} e^{i n \theta }} { \sum_{(i,j)\in [k, k+ \Delta k]} |k| } </span><script type="math/tex; mode=display"> v_n = \frac{ \sum_{(i,j)\in [k, k+ \Delta k]} |k| \frac{d^2 N}{d^2 k} e^{i n \theta }} { \sum_{(i,j)\in [k, k+ \Delta k]} |k| } </script></span></p>
+<p>If the calculation has already been done, the result is simply returned and is not repeated.</p>
+<h2 id="parameters">Parameters</h2>
+<dl>
+<dt><strong><code>forceCalculate</code></strong> :&ensp;<code>bool (default=False)</code></dt>
+<dd>If the quantity has previously been calculated, the calculation will not be done
+again unless this argument is set to True.</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><strong><code>particlesProduced</code></strong> :&ensp;<code>array(numBins = L / (delta 2 pi))</code></dt>
+<dd>&nbsp;</dd>
+</dl></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def momentaBins(self):
+<pre><code class="python">def fourierHarmonic(self, harmonic: int, forceCalculate=False):
+    r&#34;&#34;&#34;
+    Calculate the fourier harmonic of the particle production as:
+
+    $$ v_n = \frac{ \sum_{(i,j)\in [k, k+ \Delta k]} |k| \frac{d^2 N}{d^2 k} e^{i n \theta }} { \sum_{(i,j)\in [k, k+ \Delta k]} |k| } $$
+
+    If the calculation has already been done, the result is simply returned and is not repeated.
+
+
+    Parameters
+    ----------
+
+    forceCalculate : bool (default=False)
+        If the quantity has previously been calculated, the calculation will not be done
+        again unless this argument is set to True.
+
+    Returns
+    -------
+
+    particlesProduced : array(numBins = L / (delta 2 pi))
     &#34;&#34;&#34;
+    # First, see if we have already calculated this harmonic
+    if harmonic in self._fourierHarmonics.keys() and not forceCalculate:
+        return self._fourierHarmonics[harmonic]
+
+    # For actually calculating the harmonic, we first have to make sure we&#39;ve calculated
+    # the derivative, dN/d^2k
+    # This makes sure that _momentaMagSquared, _thetaInFourierSpace and _particlesProducedDeriv
+    # all exist
+    self.particlesProducedDeriv()
+
+    # Drop all of our arrays into long 1D structure, since we will want to bin them
+    vectorizedParticleDerivs = np.reshape(self._particlesProducedDeriv, [self.N*self.N])
+    vectorizedTheta = np.reshape(self._thetaInFourierSpace, [self.N*self.N])
+    vectorizedMomentaMag = np.reshape(np.sqrt(self._momentaMagSquared), [self.N*self.N])
+   
+    # The number of particles that are produced in each bin
+    # These bins are actually just thin rings in momentum space
+    self._fourierHarmonics[harmonic] = np.zeros(self.numBins, dtype=&#39;complex&#39;)
+    # The bin sizes/bounds are calculated for elsewhere
+    self.momentaBins()
+
+    momentaNormalization = np.zeros(self.numBins)
+
+    for i in range(self.N):
+        for j in range(self.N):
+            k = np.sqrt(self._momentaMagSquared[i,j])
+            indexK = int(np.floor(k / self.binSize)) 
+            # Anything greater than the highest bin just gets added to the last bin
+            # @TODO: Check if this is what we should be doing
+            indexK = min(indexK, self.numBins-1)
+
+            self._fourierHarmonics[harmonic][indexK] += self._particlesProducedDeriv[i,j] * k * np.exp(1.j * self._thetaInFourierSpace[i,j] * harmonic)
+            momentaNormalization[indexK] += k
+            
+
+    for i in range(self.numBins):
+        self._fourierHarmonics[harmonic][i] /= momentaNormalization[i]
+
+    # Ideally, these rings should be only have a thickness dk (infinitesimal)
+    # but since we have a discrete lattice, we weight the particles by their momentum
+    # (which may slightly vary) and then properly normalize
+
+    # Go through each bin and calculate (for all points in that bin):
+    # 1. Sum over |k| * dN/d^2k * exp(i * harmonic * theta)
+    # 2. Sum over |k|
+    # 3. Divide 1./2.
+    #for i in range(self.numBins):
+    #    # Find which places on the lattice fall into this particular momentum bin
+    #    # Note the use of element-wise (or bitwise) and, &#34;&amp;&#34;
+    #    particleDerivsInRing = vectorizedParticleDerivs[(vectorizedMomentaMag &lt; self.binSize*(i+1)) &amp; (vectorizedMomentaMag &gt; self.binSize*i)]
+    #    momentaMagInRing = vectorizedMomentaMag[(vectorizedMomentaMag &lt; self.binSize*(i+1)) &amp; (vectorizedMomentaMag &gt; self.binSize*i)]
+    #    thetaInRing = vectorizedTheta[(vectorizedMomentaMag &lt; self.binSize*(i+1)) &amp; (vectorizedMomentaMag &gt; self.binSize*i)]
+
+    #    # @TODO: make sure this is correct
+    #    # Note that multiplication is done element-wise by default
+    #    numeratorSum = np.sum(particleDerivsInRing * momentaMagInRing * np.exp(1.j * harmonic * thetaInRing))
+       
+    #    denominatorSum = np.sum(momentaMagInRing)
+
+    #    self._fourierHarmonics[harmonic][i] = numeratorSum / denominatorSum
+
+
+    return self._fourierHarmonics[harmonic]</code></pre>
+</details>
+</dd>
+<dt id="cgc.Collision.Collision.momentaBins"><code class="name flex">
+<span>def <span class="ident">momentaBins</span></span>(<span>self, forceCalculate=False)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Compute the range of momenta at which particles will be created based on the dimensions of the lattice.</p>
+<p>The exact values are:</p>
+<ul>
+<li><span><span class="MathJax_Preview"> k_{max} = 2 / \Delta</span><script type="math/tex"> k_{max} = 2 / \Delta</script></span></li>
+<li><span><span class="MathJax_Preview"> w_k = 4 \pi / L </span><script type="math/tex"> w_k = 4 \pi / L </script></span></li>
+</ul>
+<p>If the bins already exist, they are simply returned and no calculation is done.</p>
+<h2 id="parameters">Parameters</h2>
+<dl>
+<dt><strong><code>forceCalculate</code></strong> :&ensp;<code>bool (default=False)</code></dt>
+<dd>If the quantity has previously been calculated, the calculation will not be done
+again unless this argument is set to True.</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><strong><code>momentaBins</code></strong> :&ensp;<code>array(numBins = L / (delta 2 pi))</code></dt>
+<dd>&nbsp;</dd>
+</dl></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def momentaBins(self, forceCalculate=False):
+    r&#34;&#34;&#34;
     Compute the range of momenta at which particles will be created based on the dimensions of the lattice.
 
+    The exact values are:
+
+    - \( k_{max} = 2 / \Delta\)
+    - \( w_k = 4 \pi / L \)
+
     If the bins already exist, they are simply returned and no calculation is done.
+
+
+    Parameters
+    ----------
+
+    forceCalculate : bool (default=False)
+        If the quantity has previously been calculated, the calculation will not be done
+        again unless this argument is set to True.
+
+    Returns
+    -------
+
+    momentaBins : array(numBins = L / (delta 2 pi))
     &#34;&#34;&#34;
 
-    if self._momentaBinsExists:
+    if self._momentaBinsExists and not forceCalculate:
         return self._momentaBins
 
     self._momentaBins = [i*self.binSize for i in range(self.numBins)]
@@ -494,71 +1174,216 @@ the wilson line, though as long as only one of the wavefunctions has this proper
     return self._momentaBins</code></pre>
 </details>
 </dd>
+<dt id="cgc.Collision.Collision.momentaComponents"><code class="name flex">
+<span>def <span class="ident">momentaComponents</span></span>(<span>self, forceCalculate=False)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Compute the components of the momentum at each point on the lattice, according to:</p>
+<p><span><span class="MathJax_Preview"> (k_x, k_y) = \frac{2}{\Delta} \left( \sin\left( \frac{\pi i}{N} \right), \sin\left( \frac{\pi j}{N} \right) \right) </span><script type="math/tex; mode=display"> (k_x, k_y) = \frac{2}{\Delta} \left( \sin\left( \frac{\pi i}{N} \right), \sin\left( \frac{\pi j}{N} \right) \right) </script></span></p>
+<p>where <span><span class="MathJax_Preview">i</span><script type="math/tex">i</script></span> and <span><span class="MathJax_Preview">j</span><script type="math/tex">j</script></span> index the <span><span class="MathJax_Preview">x</span><script type="math/tex">x</script></span> and <span><span class="MathJax_Preview">y</span><script type="math/tex">y</script></span> directions in real space, respectively.</p>
+<p>If the calculation has already been done, the result is simply returned and is not repeated.</p>
+<h2 id="parameters">Parameters</h2>
+<dl>
+<dt><strong><code>forceCalculate</code></strong> :&ensp;<code>bool (default=False)</code></dt>
+<dd>If the quantity has previously been calculated, the calculation will not be done
+again unless this argument is set to True.</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><strong><code>momentaComponents</code></strong> :&ensp;<code>array(N, N, 2)</code></dt>
+<dd>&nbsp;</dd>
+</dl></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def momentaComponents(self, forceCalculate=False):
+    r&#34;&#34;&#34;
+    Compute the components of the momentum at each point on the lattice, according to:
+
+    $$ (k_x, k_y) = \frac{2}{\Delta} \left( \sin\left( \frac{\pi i}{N} \right), \sin\left( \frac{\pi j}{N} \right) \right) $$
+
+    where \(i\) and \(j\) index the \(x\) and \(y\) directions in real space, respectively.
+
+    If the calculation has already been done, the result is simply returned and is not repeated.
+
+
+    Parameters
+    ----------
+
+    forceCalculate : bool (default=False)
+        If the quantity has previously been calculated, the calculation will not be done
+        again unless this argument is set to True.
+
+    Returns
+    -------
+
+    momentaComponents : array(N, N, 2)
+    &#34;&#34;&#34;
+
+    if self._momentaComponentsExist and not forceCalculate:
+        return self._momentaComponents
+
+    self._momentaComponents, self._thetaInFourierSpace = _calculateMomentaOpt(self.N, self.delta)
+    self._momentaMagSquared = np.linalg.norm(self._momentaComponents, axis=2)**2
+
+    self._momentaComponentsExist = True
+
+    return self._momentaComponents</code></pre>
+</details>
+</dd>
+<dt id="cgc.Collision.Collision.momentaMagnitudeSquared"><code class="name flex">
+<span>def <span class="ident">momentaMagnitudeSquared</span></span>(<span>self, forceCalculate=False)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Compute the magnitude of the momentum at each point on the lattice, according to:</p>
+<p><span><span class="MathJax_Preview"> |k| = \sqrt{k_x^2 + k_y^2} </span><script type="math/tex; mode=display"> |k| = \sqrt{k_x^2 + k_y^2} </script></span></p>
+<p><span><span class="MathJax_Preview"> (k_x, k_y) = \frac{2}{\Delta} \left( \sin\left( \frac{\pi i}{N} \right), \sin\left( \frac{\pi j}{N} \right) \right) </span><script type="math/tex; mode=display"> (k_x, k_y) = \frac{2}{\Delta} \left( \sin\left( \frac{\pi i}{N} \right), \sin\left( \frac{\pi j}{N} \right) \right) </script></span></p>
+<p>where <span><span class="MathJax_Preview">i</span><script type="math/tex">i</script></span> and <span><span class="MathJax_Preview">j</span><script type="math/tex">j</script></span> index the <span><span class="MathJax_Preview">x</span><script type="math/tex">x</script></span> and <span><span class="MathJax_Preview">y</span><script type="math/tex">y</script></span> directions in real space, respectively.</p>
+<p>If the calculation has already been done, the result is simply returned and is not repeated.</p>
+<h2 id="parameters">Parameters</h2>
+<dl>
+<dt><strong><code>forceCalculate</code></strong> :&ensp;<code>bool (default=False)</code></dt>
+<dd>If the quantity has previously been calculated, the calculation will not be done
+again unless this argument is set to True.</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><strong><code>momentaComponents</code></strong> :&ensp;<code>array(N, N)</code></dt>
+<dd>&nbsp;</dd>
+</dl></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def momentaMagnitudeSquared(self, forceCalculate=False):
+    r&#34;&#34;&#34;
+    Compute the magnitude of the momentum at each point on the lattice, according to:
+
+    $$ |k| = \sqrt{k_x^2 + k_y^2} $$
+
+    $$ (k_x, k_y) = \frac{2}{\Delta} \left( \sin\left( \frac{\pi i}{N} \right), \sin\left( \frac{\pi j}{N} \right) \right) $$
+
+    where \(i\) and \(j\) index the \(x\) and \(y\) directions in real space, respectively.
+
+    If the calculation has already been done, the result is simply returned and is not repeated.
+
+
+    Parameters
+    ----------
+
+    forceCalculate : bool (default=False)
+        If the quantity has previously been calculated, the calculation will not be done
+        again unless this argument is set to True.
+
+    Returns
+    -------
+
+    momentaComponents : array(N, N)
+    &#34;&#34;&#34;
+
+    if self._momentaComponentsExist and not forceCalculate:
+        return self._momentaMagSquared
+
+    self._momentaComponents, self._thetaInFourierSpace = _calculateMomentaOpt(self.N, self.delta)
+    self._momentaMagSquared = np.linalg.norm(self._momentaComponents, axis=2)**2
+
+    self._momentaComponentsExist = True
+
+    return self._momentaMagSquared</code></pre>
+</details>
+</dd>
 <dt id="cgc.Collision.Collision.omega"><code class="name flex">
-<span>def <span class="ident">omega</span></span>(<span>self)</span>
+<span>def <span class="ident">omega</span></span>(<span>self, forceCalculate=False)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Calculate the field omega at each point on the lattice.</p>
 <p>If the field already exists, it is simply returned and no calculation is done.</p>
+<h2 id="parameters">Parameters</h2>
+<dl>
+<dt><strong><code>forceCalculate</code></strong> :&ensp;<code>bool (default=False)</code></dt>
+<dd>If the quantity has previously been calculated, the calculation will not be done
+again unless this argument is set to True.</dd>
+</dl>
 <h2 id="returns">Returns</h2>
-<p>numpy.array : shape=(2, 2, <code>colorCharges</code>**2 - 1, N, N)</p></div>
+<dl>
+<dt><strong><code>omega</code></strong> :&ensp;<code>array(2, 2, </code>colorCharges<code>**2 - 1, N, N)</code></dt>
+<dd>&nbsp;</dd>
+</dl></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def omega(self):
-    &#34;&#34;&#34;
+<pre><code class="python">def omega(self, forceCalculate=False):
+    r&#34;&#34;&#34;
     Calculate the field omega at each point on the lattice.
 
     If the field already exists, it is simply returned and no calculation is done.
 
+    Parameters
+    ----------
+
+    forceCalculate : bool (default=False)
+        If the quantity has previously been calculated, the calculation will not be done
+        again unless this argument is set to True.
+
     Returns
     -------
-    numpy.array : shape=(2, 2, `colorCharges`**2 - 1, N, N)
+
+    omega : array(2, 2, `colorCharges`**2 - 1, N, N)
 
     &#34;&#34;&#34;
 
-    if self._omegaExists:
+    if self._omegaExists and not forceCalculate:
         return self._omega
 
-    # 2,2 is for the 2 dimensions, x and y
-    self._omega = np.zeros([2, 2, self.gluonDOF, self.N, self.N], dtype=&#39;complex&#39;) # 2 is for two dimensions, x and y
+    self._omega = _calculateOmegaOpt(self.N, self.gluonDOF, self.delta, self.incidentWavefunction.gaugeField(), self.targetWavefunction.adjointWilsonLine())
 
-    def x_deriv(matrix, i, j):
-        return (matrix[i,(j+1)%self.N] - matrix[i,j-1]) / (2*self.delta)
-
-    def y_deriv(matrix, i, j):
-        return (matrix[(i+1)%self.N,j] - matrix[i-1,j]) / (2*self.delta)
-
-    derivs = [x_deriv, y_deriv]
-
-    for i in range(self.N):
-        for j in range(self.N):
-            for k in range(self.gluonDOF):
-                for l in range(2): # 2 is number of dimensions
-                    for n in range(2): # 2 is number of dimensions
-                        self._omega[l,n,k,i,j] = np.sum([derivs[l](self.incidentWavefunction.gaugeField()[m], i, j) * derivs[n](self.targetWavefunction.adjointWilsonLine()[k, m], i, j) for m in range(self.gluonDOF)])
-
+    self._omegaExists = True
     return self._omega</code></pre>
 </details>
 </dd>
 <dt id="cgc.Collision.Collision.omegaFFT"><code class="name flex">
-<span>def <span class="ident">omegaFFT</span></span>(<span>self)</span>
+<span>def <span class="ident">omegaFFT</span></span>(<span>self, forceCalculate=False)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Compute the fourier transform of the field omega on the lattice.</p>
-<p>If the fft of the field already exists, it is simply returned and no calculation is done.</p></div>
+<p>If the fft of the field already exists, it is simply returned and no calculation is done.</p>
+<h2 id="parameters">Parameters</h2>
+<dl>
+<dt><strong><code>forceCalculate</code></strong> :&ensp;<code>bool (default=False)</code></dt>
+<dd>If the quantity has previously been calculated, the calculation will not be done
+again unless this argument is set to True.</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><strong><code>omegaFFT</code></strong> :&ensp;<code>array(2, 2, </code>colorCharges<code>**2 - 1, N, N)</code></dt>
+<dd>&nbsp;</dd>
+</dl></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def omegaFFT(self):
-    &#34;&#34;&#34;
+<pre><code class="python">def omegaFFT(self, forceCalculate=False):
+    r&#34;&#34;&#34;
     Compute the fourier transform of the field omega on the lattice.
 
     If the fft of the field already exists, it is simply returned and no calculation is done.
+
+    Parameters
+    ----------
+
+    forceCalculate : bool (default=False)
+        If the quantity has previously been calculated, the calculation will not be done
+        again unless this argument is set to True.
+
+    Returns
+    -------
+
+    omegaFFT : array(2, 2, `colorCharges`**2 - 1, N, N)
+
     &#34;&#34;&#34;
-    if self._omegaFFTExists:
+    if self._omegaFFTExists and not forceCalculate:
         return self._omegaFFT
 
     # Make sure omega exists
@@ -571,70 +1396,112 @@ the wilson line, though as long as only one of the wavefunctions has this proper
 </details>
 </dd>
 <dt id="cgc.Collision.Collision.particlesProduced"><code class="name flex">
-<span>def <span class="ident">particlesProduced</span></span>(<span>self)</span>
+<span>def <span class="ident">particlesProduced</span></span>(<span>self, forceCalculate=False)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Compute the number of particles produced at each value of momentum in <code>momentaBins()</code>.</p>
-<p>If the calculation has already been done, the result is simply returned and is not repeated.</p></div>
+<div class="desc"><p>Compute the number of particles produced <span><span class="MathJax_Preview">N(|k|)</span><script type="math/tex">N(|k|)</script></span> as a function of momentum. Note that this
+is technically the zeroth fourier harmonic, so this actually just calls the
+cgc.Collision.fourierHarmonic() function.</p>
+<p>The particles are binned according to cgc.Collision.momentaBins().</p>
+<p>Most likely will be plotted against cgc.Collision.momentaBins().</p>
+<p>If the calculation has already been done, the result is simply returned and is not repeated.</p>
+<h2 id="parameters">Parameters</h2>
+<dl>
+<dt><strong><code>forceCalculate</code></strong> :&ensp;<code>bool (default=False)</code></dt>
+<dd>If the quantity has previously been calculated, the calculation will not be done
+again unless this argument is set to True.</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><strong><code>particlesProduced</code></strong> :&ensp;<code>array(numBins = L / (delta 2 pi))</code></dt>
+<dd>&nbsp;</dd>
+</dl></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def particlesProduced(self):
+<pre><code class="python">def particlesProduced(self, forceCalculate=False):
+    r&#34;&#34;&#34;
+    Compute the number of particles produced \(N(|k|)\) as a function of momentum. Note that this
+    is technically the zeroth fourier harmonic, so this actually just calls the
+    cgc.Collision.fourierHarmonic() function.
+
+    The particles are binned according to cgc.Collision.momentaBins().
+   
+    Most likely will be plotted against cgc.Collision.momentaBins().
+
+    If the calculation has already been done, the result is simply returned and is not repeated.
+
+
+    Parameters
+    ----------
+
+    forceCalculate : bool (default=False)
+        If the quantity has previously been calculated, the calculation will not be done
+        again unless this argument is set to True.
+
+    Returns
+    -------
+
+    particlesProduced : array(numBins = L / (delta 2 pi))
     &#34;&#34;&#34;
-    Compute the number of particles produced at each value of momentum in `momentaBins()`.
+    # This one is strictly real, so we should make sure that is updated        
+    self._fourierHarmonics[0] = np.real(self.fourierHarmonic(0, forceCalculate))
+    return self._fourierHarmonics[0]</code></pre>
+</details>
+</dd>
+<dt id="cgc.Collision.Collision.particlesProducedDeriv"><code class="name flex">
+<span>def <span class="ident">particlesProducedDeriv</span></span>(<span>self, forceCalculate=False)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Compute the derivative of particles produced (( \frac{d^2 N}{d^2 k} )) at each point on the lattice</p>
+<p>If the calculation has already been done, the result is simply returned and is not repeated.</p>
+<h2 id="parameters">Parameters</h2>
+<dl>
+<dt><strong><code>forceCalculate</code></strong> :&ensp;<code>bool (default=False)</code></dt>
+<dd>If the quantity has previously been calculated, the calculation will not be done
+again unless this argument is set to True.</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><strong><code>particlesProducedDeriv</code></strong> :&ensp;<code>array(N, N)</code></dt>
+<dd>&nbsp;</dd>
+</dl></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def particlesProducedDeriv(self, forceCalculate=False):
+    r&#34;&#34;&#34;
+    Compute the derivative of particles produced (\( \frac{d^2 N}{d^2 k} \)) at each point on the lattice
     
     If the calculation has already been done, the result is simply returned and is not repeated.
+
+
+    Parameters
+    ----------
+
+    forceCalculate : bool (default=False)
+        If the quantity has previously been calculated, the calculation will not be done
+        again unless this argument is set to True.
+
+    Returns
+    -------
+
+    particlesProducedDeriv : array(N, N)
     &#34;&#34;&#34;
-    if self._particlesProducedExists:
-        return self._particlesProduced
+    if self._particlesProducedDerivExists and not forceCalculate:
+        return self._particlesProducedDeriv
 
-    momentaMagSquared = np.zeros([self.N, self.N])
-
-    for i in range(self.N):
-        for j in range(self.N):
-            momentaMagSquared[i,j] = 4 / self.delta2 * (np.sin((2*np.pi*i/self.length)*self.delta/2)**2 + np.sin((2*np.pi*j/self.length)*self.delta/2)**2)
-
-    particleProduction = np.zeros([self.N, self.N])
-
-    # Make sure omegaFFT exists
+    # Make sure these quantities exist
     self.omegaFFT()
+    self.momentaMagnitudeSquared() # This also calculates thetaInFourierSpace and momentaComponents
 
-    # # 2D Levi-Cevita symbol
-    #Matrix Representation
-    LCS = np.array([[0,1],[-1,0]])
+    self._particlesProducedDeriv = _calculateParticlesProducedDerivOpt(self.N, self.gluonDOF, self._momentaMagSquared, self._omegaFFT)
 
-    # # 2D Delta function
-    #Matrix Representation
-    KDF = np.array([[1,0],[0,1]])
+    self._particlesProducedDerivExists = True
 
-    for y in range(self.N):
-        for x in range(self.N):
-            # To prevent any divide by zero errors
-            if momentaMagSquared[y,x] == 0:
-                continue
-
-            for i in range(2):
-                for j in range(2):
-                    for l in range(2):
-                        for m in range(2):
-
-                            for a in range(self.gluonDOF):
-                                particleProduction[y,x] += np.real(2/(2*np.pi)**3 / momentaMagSquared[y,x] * (KDF[i,j]*KDF[l,m] + LCS[i,j]*LCS[l,m]) * self._omegaFFT[i,j,a,y,x] * np.conj(self._omegaFFT[l,m,a,y,x]))
-
-    vectorizedParticles = np.reshape(particleProduction, [self.N*self.N])
-    vectorizedMomentaMagSquared = np.reshape(np.sqrt(momentaMagSquared), [self.N*self.N])
-
-    self._particlesProduced = np.zeros(self.numBins)
-    self.momentaBins()
-
-    # Note the use of element-wise (or bitwise) and, &#34;&amp;&#34;
-    for i in range(self.numBins):
-        self._particlesProduced[i] = np.mean(vectorizedParticles[(vectorizedMomentaMagSquared &lt; self.binSize*(i+1)) &amp; (vectorizedMomentaMagSquared &gt; self.binSize*i)])
-
-    self._particlesProducedExists = True
-
-    return self._particlesProduced</code></pre>
+    return self._particlesProducedDeriv</code></pre>
 </details>
 </dd>
 </dl>
@@ -658,11 +1525,15 @@ the wilson line, though as long as only one of the wavefunctions has this proper
 <li>
 <h4><code><a title="cgc.Collision.Collision" href="#cgc.Collision.Collision">Collision</a></code></h4>
 <ul class="">
+<li><code><a title="cgc.Collision.Collision.fourierHarmonic" href="#cgc.Collision.Collision.fourierHarmonic">fourierHarmonic</a></code></li>
 <li><code><a title="cgc.Collision.Collision.incidentWavefunction" href="#cgc.Collision.Collision.incidentWavefunction">incidentWavefunction</a></code></li>
 <li><code><a title="cgc.Collision.Collision.momentaBins" href="#cgc.Collision.Collision.momentaBins">momentaBins</a></code></li>
+<li><code><a title="cgc.Collision.Collision.momentaComponents" href="#cgc.Collision.Collision.momentaComponents">momentaComponents</a></code></li>
+<li><code><a title="cgc.Collision.Collision.momentaMagnitudeSquared" href="#cgc.Collision.Collision.momentaMagnitudeSquared">momentaMagnitudeSquared</a></code></li>
 <li><code><a title="cgc.Collision.Collision.omega" href="#cgc.Collision.Collision.omega">omega</a></code></li>
 <li><code><a title="cgc.Collision.Collision.omegaFFT" href="#cgc.Collision.Collision.omegaFFT">omegaFFT</a></code></li>
 <li><code><a title="cgc.Collision.Collision.particlesProduced" href="#cgc.Collision.Collision.particlesProduced">particlesProduced</a></code></li>
+<li><code><a title="cgc.Collision.Collision.particlesProducedDeriv" href="#cgc.Collision.Collision.particlesProducedDeriv">particlesProducedDeriv</a></code></li>
 <li><code><a title="cgc.Collision.Collision.targetWavefunction" href="#cgc.Collision.Collision.targetWavefunction">targetWavefunction</a></code></li>
 </ul>
 </li>

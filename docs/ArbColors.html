@@ -46,7 +46,7 @@ class Nucleus(Wavefunction):
     _wilsonLineExists = False
     _adjointWilsonLineExists = False
 
-    def __init__(self, colorCharges, N, delta, mu, M=.5, g=1, Ny=100):
+    def __init__(self, colorCharges, N, delta, mu, M=.5, g=1, Ny=100, rngSeed=None):
         r&#34;&#34;&#34;
         Dense object to be used in an instance of `cgc.Collision.Collision`.
 
@@ -76,9 +76,11 @@ class Nucleus(Wavefunction):
         Ny : positive integer (default=100)
             The longitudinal extent (in layers) of the nucleus object.
 
+        rngSeed : int (default=None)
+            Seed for the random number generator to initialize the color charge field
         &#34;&#34;&#34;
 
-        super().__init__(colorCharges, N, delta, mu, M, g) # Super constructor
+        super().__init__(colorCharges, N, delta, mu, M, g, rngSeed) # Super constructor
         self._basis = get_basis(colorCharges)
         self.Ny = Ny
 
@@ -86,7 +88,7 @@ class Nucleus(Wavefunction):
         self.gaussianWidth = self.mu / self.delta / np.sqrt(self.Ny)
 
 
-    def colorChargeField(self):
+    def colorChargeField(self, forceCalculate=False):
         r&#34;&#34;&#34;
         Generates the color charge density field according to a gaussian distribution. Differs
         from super class implementation in that it generates the numerous fields according
@@ -94,21 +96,33 @@ class Nucleus(Wavefunction):
 
         $$ \langle \rho_{a}^{(t)}(i^-,\vec i_{\perp}) \rho_{b}^{(t)}({j^-},\vec j_{\perp}) \rangle = g^2\mu_t^2 \frac{ 1 }{N_y \Delta^2}  ~\delta_{ab}~\delta_{i_{\perp,1}\ j_{\perp,1}}~\delta_{i_{\perp,2} \ j_{\perp,2}} ~\delta_{i^- \ {j^-}} $$ 
 
-
         If the field already exists, it is simply returned and no calculation is done.
+
+
+        Parameters
+        ----------
+
+        forceCalculate : bool (default=False)
+            If the quantity has previously been calculated, the calculation will not be done
+            again unless this argument is set to True.
+
+        Returns
+        -------
+
+        colorChargeField : array(Ny, `colorCharges`**2 - 1, N, N)
         &#34;&#34;&#34;
-        if self._colorChargeFieldExists:
+        if self._colorChargeFieldExists and not forceCalculate:
             return self._colorChargeField
 
         # Randomly generate the intial color charge density using a gaussian distribution
-        self._colorChargeField = np.random.normal(scale=self.gaussianWidth, size=(self.Ny, self.gluonDOF, self.N, self.N))
+        self._colorChargeField = self.rng.normal(scale=self.gaussianWidth, size=(self.Ny, self.gluonDOF, self.N, self.N))
         # Make sure we don&#39;t regenerate this field since it already exists on future calls
         self._colorChargeFieldExists = True
 
         return self._colorChargeField
 
 
-    def gaugeField(self):
+    def gaugeField(self, forceCalculate=False):
         r&#34;&#34;&#34;
         Calculates the gauge field for all longitudinal layers and charge distributions by solving the (modified)
         Poisson equation involving the color charge field
@@ -118,9 +132,22 @@ class Nucleus(Wavefunction):
         via Fourier method.
 
         If the field already exists, it is simply returned and no calculation is done.
+        
+
+        Parameters
+        ----------
+
+        forceCalculate : bool (default=False)
+            If the quantity has previously been calculated, the calculation will not be done
+            again unless this argument is set to True.
+
+        Returns
+        -------
+
+        gaugeField : array(Ny, `colorCharges`**2 - 1, N, N)
         &#34;&#34;&#34;
 
-        if self._gaugeFieldExists:
+        if self._gaugeFieldExists and not forceCalculate:
             return self._gaugeField
 
         # Make sure the charge field has already been generated (if not, this will generate it)
@@ -147,13 +174,26 @@ class Nucleus(Wavefunction):
         return self._gaugeField
 
 
-    def wilsonLine(self):
+    def wilsonLine(self, forceCalculate=False):
         &#34;&#34;&#34;
         Calculate the Wilson line using the gauge field and the appropriate basis matrices.
 
         If the line already exists, it is simply returned and no calculation is done.
+        
+
+        Parameters
+        ----------
+
+        forceCalculate : bool (default=False)
+            If the quantity has previously been calculated, the calculation will not be done
+            again unless this argument is set to True.
+
+        Returns
+        -------
+
+        wilsonLine : array(N, N, `colorCharges`)
         &#34;&#34;&#34;
-        if self._wilsonLineExists:
+        if self._wilsonLineExists and not forceCalculate:
             return self._wilsonLine
 
         # Make sure the gauge field has already been calculated
@@ -166,13 +206,26 @@ class Nucleus(Wavefunction):
 
         return self._wilsonLine
 
-    def adjointWilsonLine(self):
+    def adjointWilsonLine(self, forceCalculate=False):
         &#34;&#34;&#34;
         Calculate the Wilson line in the adjoint representation.
 
         If the line already exists, it is simply returned and no calculation is done.
+        
+
+        Parameters
+        ----------
+
+        forceCalculate : bool (default=False)
+            If the quantity has previously been calculated, the calculation will not be done
+            again unless this argument is set to True.
+
+        Returns
+        -------
+
+        adjointWilsonLine : array(`colorCharges`**2 - 1, `colorCharges`**2 - 1, N, N)
         &#34;&#34;&#34;
-        if self._adjointWilsonLineExists:
+        if self._adjointWilsonLineExists and not forceCalculate:
             return self._adjointWilsonLine
         
         # Make sure the wilson line has already been calculated
@@ -191,7 +244,7 @@ class Nucleus(Wavefunction):
 # Since we want to speed up the calculate, we define the calculation of the fourier elements of
 # the gauge field using a numba-compiled method
 # This has to be defined outside of the Nuclelus class since numbda doesn&#39;t play well with custom libraries
-@numba.jit(nopython=True)
+@numba.jit(nopython=True, cache=True)
 def _calculateGaugeFFTOpt(gluonDOF, N, Ny, poissonReg, chargeDensityFFTArr):
     r&#34;&#34;&#34;
     Calculate the elements of the gauge field in fourier space.
@@ -213,7 +266,7 @@ def _calculateGaugeFFTOpt(gluonDOF, N, Ny, poissonReg, chargeDensityFFTArr):
 
 # Same deal as the above method, we have to define it outside the class so
 # numba doesn&#39;t get confused
-@numba.jit(nopython=True) 
+@numba.jit(nopython=True, cache=True) 
 def _calculateWilsonLineOpt(N, Ny, colorCharges, basis, gaugeField): 
     r&#34;&#34;&#34;
     Calculate the elements of the wilson line.
@@ -250,12 +303,12 @@ def _calculateWilsonLineOpt(N, Ny, colorCharges, basis, gaugeField):
     return wilsonLine
 
 
-@numba.jit(nopython=True)
+@numba.jit(nopython=True, cache=True)
 def _calculateAdjointWilsonLineOpt(gluonDOF, N, basis, wilsonLine):
     r&#34;&#34;&#34;
     Calculate the wilson line in the adjoint representation.
 
-    This method is optimized using numba.
+    This method is optimized using numba
     &#34;&#34;&#34;
     # Wilson line is always real in adjoint representation, so need to dtype=&#39;complex&#39; as with the others
     adjointWilsonLine = np.zeros((gluonDOF, gluonDOF, N, N), dtype=&#39;double&#39;)
@@ -282,7 +335,7 @@ def _calculateAdjointWilsonLineOpt(gluonDOF, N, basis, wilsonLine):
 <dl>
 <dt id="cgc.ArbColors.Nucleus"><code class="flex name class">
 <span>class <span class="ident">Nucleus</span></span>
-<span>(</span><span>colorCharges, N, delta, mu, M=0.5, g=1, Ny=100)</span>
+<span>(</span><span>colorCharges, N, delta, mu, M=0.5, g=1, Ny=100, rngSeed=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Dense object to be used in an instance of <code><a title="cgc.Collision.Collision" href="Collision.html#cgc.Collision.Collision">Collision</a></code>.</p>
@@ -303,6 +356,8 @@ def _calculateAdjointWilsonLineOpt(gluonDOF, N, basis, wilsonLine):
 <dd>Parameter in the Poisson equation for the gauge field.</dd>
 <dt><strong><code>Ny</code></strong> :&ensp;<code>positive integer (default=100)</code></dt>
 <dd>The longitudinal extent (in layers) of the nucleus object.</dd>
+<dt><strong><code>rngSeed</code></strong> :&ensp;<code>int (default=None)</code></dt>
+<dd>Seed for the random number generator to initialize the color charge field</dd>
 </dl></div>
 <details class="source">
 <summary>
@@ -319,7 +374,7 @@ def _calculateAdjointWilsonLineOpt(gluonDOF, N, basis, wilsonLine):
     _wilsonLineExists = False
     _adjointWilsonLineExists = False
 
-    def __init__(self, colorCharges, N, delta, mu, M=.5, g=1, Ny=100):
+    def __init__(self, colorCharges, N, delta, mu, M=.5, g=1, Ny=100, rngSeed=None):
         r&#34;&#34;&#34;
         Dense object to be used in an instance of `cgc.Collision.Collision`.
 
@@ -349,9 +404,11 @@ def _calculateAdjointWilsonLineOpt(gluonDOF, N, basis, wilsonLine):
         Ny : positive integer (default=100)
             The longitudinal extent (in layers) of the nucleus object.
 
+        rngSeed : int (default=None)
+            Seed for the random number generator to initialize the color charge field
         &#34;&#34;&#34;
 
-        super().__init__(colorCharges, N, delta, mu, M, g) # Super constructor
+        super().__init__(colorCharges, N, delta, mu, M, g, rngSeed) # Super constructor
         self._basis = get_basis(colorCharges)
         self.Ny = Ny
 
@@ -359,7 +416,7 @@ def _calculateAdjointWilsonLineOpt(gluonDOF, N, basis, wilsonLine):
         self.gaussianWidth = self.mu / self.delta / np.sqrt(self.Ny)
 
 
-    def colorChargeField(self):
+    def colorChargeField(self, forceCalculate=False):
         r&#34;&#34;&#34;
         Generates the color charge density field according to a gaussian distribution. Differs
         from super class implementation in that it generates the numerous fields according
@@ -367,21 +424,33 @@ def _calculateAdjointWilsonLineOpt(gluonDOF, N, basis, wilsonLine):
 
         $$ \langle \rho_{a}^{(t)}(i^-,\vec i_{\perp}) \rho_{b}^{(t)}({j^-},\vec j_{\perp}) \rangle = g^2\mu_t^2 \frac{ 1 }{N_y \Delta^2}  ~\delta_{ab}~\delta_{i_{\perp,1}\ j_{\perp,1}}~\delta_{i_{\perp,2} \ j_{\perp,2}} ~\delta_{i^- \ {j^-}} $$ 
 
-
         If the field already exists, it is simply returned and no calculation is done.
+
+
+        Parameters
+        ----------
+
+        forceCalculate : bool (default=False)
+            If the quantity has previously been calculated, the calculation will not be done
+            again unless this argument is set to True.
+
+        Returns
+        -------
+
+        colorChargeField : array(Ny, `colorCharges`**2 - 1, N, N)
         &#34;&#34;&#34;
-        if self._colorChargeFieldExists:
+        if self._colorChargeFieldExists and not forceCalculate:
             return self._colorChargeField
 
         # Randomly generate the intial color charge density using a gaussian distribution
-        self._colorChargeField = np.random.normal(scale=self.gaussianWidth, size=(self.Ny, self.gluonDOF, self.N, self.N))
+        self._colorChargeField = self.rng.normal(scale=self.gaussianWidth, size=(self.Ny, self.gluonDOF, self.N, self.N))
         # Make sure we don&#39;t regenerate this field since it already exists on future calls
         self._colorChargeFieldExists = True
 
         return self._colorChargeField
 
 
-    def gaugeField(self):
+    def gaugeField(self, forceCalculate=False):
         r&#34;&#34;&#34;
         Calculates the gauge field for all longitudinal layers and charge distributions by solving the (modified)
         Poisson equation involving the color charge field
@@ -391,9 +460,22 @@ def _calculateAdjointWilsonLineOpt(gluonDOF, N, basis, wilsonLine):
         via Fourier method.
 
         If the field already exists, it is simply returned and no calculation is done.
+        
+
+        Parameters
+        ----------
+
+        forceCalculate : bool (default=False)
+            If the quantity has previously been calculated, the calculation will not be done
+            again unless this argument is set to True.
+
+        Returns
+        -------
+
+        gaugeField : array(Ny, `colorCharges`**2 - 1, N, N)
         &#34;&#34;&#34;
 
-        if self._gaugeFieldExists:
+        if self._gaugeFieldExists and not forceCalculate:
             return self._gaugeField
 
         # Make sure the charge field has already been generated (if not, this will generate it)
@@ -420,13 +502,26 @@ def _calculateAdjointWilsonLineOpt(gluonDOF, N, basis, wilsonLine):
         return self._gaugeField
 
 
-    def wilsonLine(self):
+    def wilsonLine(self, forceCalculate=False):
         &#34;&#34;&#34;
         Calculate the Wilson line using the gauge field and the appropriate basis matrices.
 
         If the line already exists, it is simply returned and no calculation is done.
+        
+
+        Parameters
+        ----------
+
+        forceCalculate : bool (default=False)
+            If the quantity has previously been calculated, the calculation will not be done
+            again unless this argument is set to True.
+
+        Returns
+        -------
+
+        wilsonLine : array(N, N, `colorCharges`)
         &#34;&#34;&#34;
-        if self._wilsonLineExists:
+        if self._wilsonLineExists and not forceCalculate:
             return self._wilsonLine
 
         # Make sure the gauge field has already been calculated
@@ -439,13 +534,26 @@ def _calculateAdjointWilsonLineOpt(gluonDOF, N, basis, wilsonLine):
 
         return self._wilsonLine
 
-    def adjointWilsonLine(self):
+    def adjointWilsonLine(self, forceCalculate=False):
         &#34;&#34;&#34;
         Calculate the Wilson line in the adjoint representation.
 
         If the line already exists, it is simply returned and no calculation is done.
+        
+
+        Parameters
+        ----------
+
+        forceCalculate : bool (default=False)
+            If the quantity has previously been calculated, the calculation will not be done
+            again unless this argument is set to True.
+
+        Returns
+        -------
+
+        adjointWilsonLine : array(`colorCharges`**2 - 1, `colorCharges`**2 - 1, N, N)
         &#34;&#34;&#34;
-        if self._adjointWilsonLineExists:
+        if self._adjointWilsonLineExists and not forceCalculate:
             return self._adjointWilsonLine
         
         # Make sure the wilson line has already been calculated
@@ -466,22 +574,46 @@ def _calculateAdjointWilsonLineOpt(gluonDOF, N, basis, wilsonLine):
 <h3>Methods</h3>
 <dl>
 <dt id="cgc.ArbColors.Nucleus.adjointWilsonLine"><code class="name flex">
-<span>def <span class="ident">adjointWilsonLine</span></span>(<span>self)</span>
+<span>def <span class="ident">adjointWilsonLine</span></span>(<span>self, forceCalculate=False)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Calculate the Wilson line in the adjoint representation.</p>
-<p>If the line already exists, it is simply returned and no calculation is done.</p></div>
+<p>If the line already exists, it is simply returned and no calculation is done.</p>
+<h2 id="parameters">Parameters</h2>
+<dl>
+<dt><strong><code>forceCalculate</code></strong> :&ensp;<code>bool (default=False)</code></dt>
+<dd>If the quantity has previously been calculated, the calculation will not be done
+again unless this argument is set to True.</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><strong><code>adjointWilsonLine</code></strong> :&ensp;<code>array(</code>colorCharges<code>**2 - 1,</code>colorCharges<code>**2 - 1, N, N)</code></dt>
+<dd>&nbsp;</dd>
+</dl></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def adjointWilsonLine(self):
+<pre><code class="python">def adjointWilsonLine(self, forceCalculate=False):
     &#34;&#34;&#34;
     Calculate the Wilson line in the adjoint representation.
 
     If the line already exists, it is simply returned and no calculation is done.
+    
+
+    Parameters
+    ----------
+
+    forceCalculate : bool (default=False)
+        If the quantity has previously been calculated, the calculation will not be done
+        again unless this argument is set to True.
+
+    Returns
+    -------
+
+    adjointWilsonLine : array(`colorCharges`**2 - 1, `colorCharges`**2 - 1, N, N)
     &#34;&#34;&#34;
-    if self._adjointWilsonLineExists:
+    if self._adjointWilsonLineExists and not forceCalculate:
         return self._adjointWilsonLine
     
     # Make sure the wilson line has already been calculated
@@ -497,7 +629,7 @@ def _calculateAdjointWilsonLineOpt(gluonDOF, N, basis, wilsonLine):
 </details>
 </dd>
 <dt id="cgc.ArbColors.Nucleus.colorChargeField"><code class="name flex">
-<span>def <span class="ident">colorChargeField</span></span>(<span>self)</span>
+<span>def <span class="ident">colorChargeField</span></span>(<span>self, forceCalculate=False)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Generates the color charge density field according to a gaussian distribution. Differs
@@ -506,12 +638,23 @@ to <code>Ny</code>. That is, the field <span><span class="MathJax_Preview">\rho<
 <p><span><span class="MathJax_Preview"> \langle \rho_{a}^{(t)}(i^-,\vec i_{\perp}) \rho_{b}^{(t)}({j^-},\vec j_{\perp}) \rangle = g^2\mu_t^2 \frac{ 1 }{N_y \Delta^2}
 ~\delta_{ab}~\delta_{i_{\perp,1}\ j_{\perp,1}}~\delta_{i_{\perp,2} \ j_{\perp,2}} ~\delta_{i^- \ {j^-}} </span><script type="math/tex; mode=display"> \langle \rho_{a}^{(t)}(i^-,\vec i_{\perp}) \rho_{b}^{(t)}({j^-},\vec j_{\perp}) \rangle = g^2\mu_t^2 \frac{ 1 }{N_y \Delta^2}
 ~\delta_{ab}~\delta_{i_{\perp,1}\ j_{\perp,1}}~\delta_{i_{\perp,2} \ j_{\perp,2}} ~\delta_{i^- \ {j^-}} </script></span> </p>
-<p>If the field already exists, it is simply returned and no calculation is done.</p></div>
+<p>If the field already exists, it is simply returned and no calculation is done.</p>
+<h2 id="parameters">Parameters</h2>
+<dl>
+<dt><strong><code>forceCalculate</code></strong> :&ensp;<code>bool (default=False)</code></dt>
+<dd>If the quantity has previously been calculated, the calculation will not be done
+again unless this argument is set to True.</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><strong><code>colorChargeField</code></strong> :&ensp;<code>array(Ny, </code>colorCharges<code>**2 - 1, N, N)</code></dt>
+<dd>&nbsp;</dd>
+</dl></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def colorChargeField(self):
+<pre><code class="python">def colorChargeField(self, forceCalculate=False):
     r&#34;&#34;&#34;
     Generates the color charge density field according to a gaussian distribution. Differs
     from super class implementation in that it generates the numerous fields according
@@ -519,14 +662,26 @@ to <code>Ny</code>. That is, the field <span><span class="MathJax_Preview">\rho<
 
     $$ \langle \rho_{a}^{(t)}(i^-,\vec i_{\perp}) \rho_{b}^{(t)}({j^-},\vec j_{\perp}) \rangle = g^2\mu_t^2 \frac{ 1 }{N_y \Delta^2}  ~\delta_{ab}~\delta_{i_{\perp,1}\ j_{\perp,1}}~\delta_{i_{\perp,2} \ j_{\perp,2}} ~\delta_{i^- \ {j^-}} $$ 
 
-
     If the field already exists, it is simply returned and no calculation is done.
+
+
+    Parameters
+    ----------
+
+    forceCalculate : bool (default=False)
+        If the quantity has previously been calculated, the calculation will not be done
+        again unless this argument is set to True.
+
+    Returns
+    -------
+
+    colorChargeField : array(Ny, `colorCharges`**2 - 1, N, N)
     &#34;&#34;&#34;
-    if self._colorChargeFieldExists:
+    if self._colorChargeFieldExists and not forceCalculate:
         return self._colorChargeField
 
     # Randomly generate the intial color charge density using a gaussian distribution
-    self._colorChargeField = np.random.normal(scale=self.gaussianWidth, size=(self.Ny, self.gluonDOF, self.N, self.N))
+    self._colorChargeField = self.rng.normal(scale=self.gaussianWidth, size=(self.Ny, self.gluonDOF, self.N, self.N))
     # Make sure we don&#39;t regenerate this field since it already exists on future calls
     self._colorChargeFieldExists = True
 
@@ -534,7 +689,7 @@ to <code>Ny</code>. That is, the field <span><span class="MathJax_Preview">\rho<
 </details>
 </dd>
 <dt id="cgc.ArbColors.Nucleus.gaugeField"><code class="name flex">
-<span>def <span class="ident">gaugeField</span></span>(<span>self)</span>
+<span>def <span class="ident">gaugeField</span></span>(<span>self, forceCalculate=False)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Calculates the gauge field for all longitudinal layers and charge distributions by solving the (modified)
@@ -543,12 +698,23 @@ Poisson equation involving the color charge field</p>
 } {\partial_\perp^2 - m^2 } \rho_a(i^-, \vec {i}_\perp )</span><script type="math/tex; mode=display">g \frac{1
 } {\partial_\perp^2 - m^2 } \rho_a(i^-, \vec {i}_\perp )</script></span></p>
 <p>via Fourier method.</p>
-<p>If the field already exists, it is simply returned and no calculation is done.</p></div>
+<p>If the field already exists, it is simply returned and no calculation is done.</p>
+<h2 id="parameters">Parameters</h2>
+<dl>
+<dt><strong><code>forceCalculate</code></strong> :&ensp;<code>bool (default=False)</code></dt>
+<dd>If the quantity has previously been calculated, the calculation will not be done
+again unless this argument is set to True.</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><strong><code>gaugeField</code></strong> :&ensp;<code>array(Ny, </code>colorCharges<code>**2 - 1, N, N)</code></dt>
+<dd>&nbsp;</dd>
+</dl></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def gaugeField(self):
+<pre><code class="python">def gaugeField(self, forceCalculate=False):
     r&#34;&#34;&#34;
     Calculates the gauge field for all longitudinal layers and charge distributions by solving the (modified)
     Poisson equation involving the color charge field
@@ -558,9 +724,22 @@ Poisson equation involving the color charge field</p>
     via Fourier method.
 
     If the field already exists, it is simply returned and no calculation is done.
+    
+
+    Parameters
+    ----------
+
+    forceCalculate : bool (default=False)
+        If the quantity has previously been calculated, the calculation will not be done
+        again unless this argument is set to True.
+
+    Returns
+    -------
+
+    gaugeField : array(Ny, `colorCharges`**2 - 1, N, N)
     &#34;&#34;&#34;
 
-    if self._gaugeFieldExists:
+    if self._gaugeFieldExists and not forceCalculate:
         return self._gaugeField
 
     # Make sure the charge field has already been generated (if not, this will generate it)
@@ -588,22 +767,46 @@ Poisson equation involving the color charge field</p>
 </details>
 </dd>
 <dt id="cgc.ArbColors.Nucleus.wilsonLine"><code class="name flex">
-<span>def <span class="ident">wilsonLine</span></span>(<span>self)</span>
+<span>def <span class="ident">wilsonLine</span></span>(<span>self, forceCalculate=False)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Calculate the Wilson line using the gauge field and the appropriate basis matrices.</p>
-<p>If the line already exists, it is simply returned and no calculation is done.</p></div>
+<p>If the line already exists, it is simply returned and no calculation is done.</p>
+<h2 id="parameters">Parameters</h2>
+<dl>
+<dt><strong><code>forceCalculate</code></strong> :&ensp;<code>bool (default=False)</code></dt>
+<dd>If the quantity has previously been calculated, the calculation will not be done
+again unless this argument is set to True.</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><strong><code>wilsonLine</code></strong> :&ensp;<code>array(N, N, </code>colorCharges<code>)</code></dt>
+<dd>&nbsp;</dd>
+</dl></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def wilsonLine(self):
+<pre><code class="python">def wilsonLine(self, forceCalculate=False):
     &#34;&#34;&#34;
     Calculate the Wilson line using the gauge field and the appropriate basis matrices.
 
     If the line already exists, it is simply returned and no calculation is done.
+    
+
+    Parameters
+    ----------
+
+    forceCalculate : bool (default=False)
+        If the quantity has previously been calculated, the calculation will not be done
+        again unless this argument is set to True.
+
+    Returns
+    -------
+
+    wilsonLine : array(N, N, `colorCharges`)
     &#34;&#34;&#34;
-    if self._wilsonLineExists:
+    if self._wilsonLineExists and not forceCalculate:
         return self._wilsonLine
 
     # Make sure the gauge field has already been calculated

@@ -50,7 +50,7 @@ class Wavefunction():
     #_wilsonLineExists = False # May not be implemented depending on nucleus/proton
     #_adjointWilsonLineExists = False # May not be implemented depending on nucleus/proton
 
-    def __init__(self, colorCharges, N, delta, mu, M=.5, g=1):
+    def __init__(self, colorCharges, N, delta, mu, M=.5, g=1, rngSeed=None):
         r&#34;&#34;&#34;
 
         Base wavefunction class inplementing a generic color charge and gauge field
@@ -75,6 +75,9 @@ class Wavefunction():
 
         g : float (default=1)
             Parameter in the Poisson equation for the gauge field
+
+        rngSeed : int (default=None)
+            Seed for the random number generator to initialize the color charge field
         &#34;&#34;&#34;
 
         self.N = N
@@ -96,25 +99,44 @@ class Wavefunction():
         self.xCenter = self.yCenter = self.length / 2
         self.poissonReg = (self.M2 * self.delta2) / 2
 
-    def colorChargeField(self):
+        # Setup the random number generator
+        if rngSeed != None:
+            self.rng = np.random.default_rng(rngSeed)
+        else:
+            self.rng = np.random.default_rng()
+
+    def colorChargeField(self, forceCalculate=False):
         r&#34;&#34;&#34;
         Generates the color charge density 2-d field according to a gaussian distribution.
         The width of the gaussian is given by `mu` divided by the discretization `delta`. 
 
         If the field already exists, it is simply returned and no calculation is done.
+
+
+        Parameters
+        ----------
+
+        forceCalculate : bool (default=False)
+            If the quantity has previously been calculated, the calculation will not be done
+            again unless this argument is set to True.
+
+        Returns
+        -------
+
+        colorChargeField : array(`colorCharges`**2 - 1, N, N)
         &#34;&#34;&#34;
-        if self._colorChargeFieldExists:
+        if self._colorChargeFieldExists and not forceCalculate:
             return self._colorChargeField
 
         # Randomly generate the intial color charge density using a gaussian distribution
-        self._colorChargeField = np.random.normal(scale=self.gaussianWidth, size=(self.gluonDOF, self.N, self.N))
+        self._colorChargeField = self.rng.normal(scale=self.gaussianWidth, size=(self.gluonDOF, self.N, self.N))
         # Make sure we don&#39;t regenerate this field since it already exists on future calls
         self._colorChargeFieldExists = True
 
         return self._colorChargeField
 
 
-    def gaugeField(self):
+    def gaugeField(self, forceCalculate=False):
         r&#34;&#34;&#34;
         Calculates the gauge field for the given color charge distribution by solving the (modified)
         Poisson equation involving the color charge field
@@ -124,8 +146,21 @@ class Wavefunction():
         via Fourier method.
 
         If the field already exists, it is simply returned and no calculation is done.
+
+
+        Parameters
+        ----------
+
+        forceCalculate : bool (default=False)
+            If the quantity has previously been calculated, the calculation will not be done
+            again unless this argument is set to True.
+
+        Returns
+        -------
+
+        gaugeField : array(`colorCharges`**2 - 1, N, N)
         &#34;&#34;&#34;
-        if self._gaugeFieldExists:
+        if self._gaugeFieldExists and not forceCalculate:
             return self._gaugeField
 
         # Make sure the charge field has already been generated (if not, this will generate it)
@@ -173,7 +208,7 @@ class Proton(Wavefunction):
     with a width equal to `radius`.
     &#34;&#34;&#34;
 
-    def __init__(self, colorCharges, N, delta, mu, radius, M=.5, g=1):
+    def __init__(self, colorCharges, N, delta, mu, radius, M=.5, g=1, rngSeed=None):
         &#34;&#34;&#34;
 
         Parameters
@@ -199,22 +234,37 @@ class Proton(Wavefunction):
         g : float (default=1)
             Parameter in the Poisson equation for the gauge field
 
+        rngSeed : int (default=None)
+            Seed for the random number generator to initialize the color charge field
+
         &#34;&#34;&#34;
 
-        super().__init__(colorCharges, N, delta, mu, M, g) # Super constructor
+        super().__init__(colorCharges, N, delta, mu, M, g, rngSeed) # Super constructor
         self.radius = radius
 
-    def colorChargeField(self):
+    def colorChargeField(self, forceCalculate=False):
         r&#34;&#34;&#34;
         Generates the color charge density field according to a gaussian distribution, which decays according
         to a centered (different) gaussian distribution. That is, the field \(\rho\) satisfies:
 
         $$ \langle \rho_{a}^{(p)}(\vec x_{\perp} ) \rho_{b}^{(p)}(\vec y_{\perp} ) \rangle = g^2\mu_p^2 ~\exp\left( -\frac{\vec x_{\perp}^{2}}{2R_{p}^2} \right) ~\delta_{ab}~\delta^{(2)}(\vec x_{\perp}-\vec y_{\perp}) $$
 
-
         If the field already exists, it is simply returned and no calculation is done.
+
+
+        Parameters
+        ----------
+
+        forceCalculate : bool (default=False)
+            If the quantity has previously been calculated, the calculation will not be done
+            again unless this argument is set to True.
+
+        Returns
+        -------
+
+        colorChargeField : array(`colorCharges`**2 - 1, N, N)
         &#34;&#34;&#34;
-        if self._colorChargeFieldExists:
+        if self._colorChargeFieldExists and not forceCalculate:
             return self._colorChargeField
 
         # Centered gaussian distribution defined by class parameters
@@ -224,7 +274,7 @@ class Proton(Wavefunction):
         protonGaussianCorrection = np.array([gaussian(i*self.delta, np.arange(0, self.N)*self.delta) for i in np.arange(0, self.N)])
 
         # Randomly generate the intial color charge density using a gaussian distribution
-        self._colorChargeField = np.random.normal(scale=self.gaussianWidth, size=(self.gluonDOF, self.N, self.N))
+        self._colorChargeField = self.rng.normal(scale=self.gaussianWidth, size=(self.gluonDOF, self.N, self.N))
         self._colorChargeField *= protonGaussianCorrection # Apply the correction
 
         # Make sure we don&#39;t regenerate this field since it already exists on future calls
@@ -244,7 +294,7 @@ class Proton(Wavefunction):
 <dl>
 <dt id="cgc.Wavefunction.Proton"><code class="flex name class">
 <span>class <span class="ident">Proton</span></span>
-<span>(</span><span>colorCharges, N, delta, mu, radius, M=0.5, g=1)</span>
+<span>(</span><span>colorCharges, N, delta, mu, radius, M=0.5, g=1, rngSeed=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Dilute object to be used in an instance of <code><a title="cgc.Collision.Collision" href="Collision.html#cgc.Collision.Collision">Collision</a></code>.</p>
@@ -266,6 +316,8 @@ with a width equal to <code>radius</code>.</p>
 <dd>Infrared regulator parameter to regularize the Poisson equation for the gauge field.</dd>
 <dt><strong><code>g</code></strong> :&ensp;<code>float (default=1)</code></dt>
 <dd>Parameter in the Poisson equation for the gauge field</dd>
+<dt><strong><code>rngSeed</code></strong> :&ensp;<code>int (default=None)</code></dt>
+<dd>Seed for the random number generator to initialize the color charge field</dd>
 </dl></div>
 <details class="source">
 <summary>
@@ -279,7 +331,7 @@ with a width equal to <code>radius</code>.</p>
     with a width equal to `radius`.
     &#34;&#34;&#34;
 
-    def __init__(self, colorCharges, N, delta, mu, radius, M=.5, g=1):
+    def __init__(self, colorCharges, N, delta, mu, radius, M=.5, g=1, rngSeed=None):
         &#34;&#34;&#34;
 
         Parameters
@@ -305,22 +357,37 @@ with a width equal to <code>radius</code>.</p>
         g : float (default=1)
             Parameter in the Poisson equation for the gauge field
 
+        rngSeed : int (default=None)
+            Seed for the random number generator to initialize the color charge field
+
         &#34;&#34;&#34;
 
-        super().__init__(colorCharges, N, delta, mu, M, g) # Super constructor
+        super().__init__(colorCharges, N, delta, mu, M, g, rngSeed) # Super constructor
         self.radius = radius
 
-    def colorChargeField(self):
+    def colorChargeField(self, forceCalculate=False):
         r&#34;&#34;&#34;
         Generates the color charge density field according to a gaussian distribution, which decays according
         to a centered (different) gaussian distribution. That is, the field \(\rho\) satisfies:
 
         $$ \langle \rho_{a}^{(p)}(\vec x_{\perp} ) \rho_{b}^{(p)}(\vec y_{\perp} ) \rangle = g^2\mu_p^2 ~\exp\left( -\frac{\vec x_{\perp}^{2}}{2R_{p}^2} \right) ~\delta_{ab}~\delta^{(2)}(\vec x_{\perp}-\vec y_{\perp}) $$
 
-
         If the field already exists, it is simply returned and no calculation is done.
+
+
+        Parameters
+        ----------
+
+        forceCalculate : bool (default=False)
+            If the quantity has previously been calculated, the calculation will not be done
+            again unless this argument is set to True.
+
+        Returns
+        -------
+
+        colorChargeField : array(`colorCharges`**2 - 1, N, N)
         &#34;&#34;&#34;
-        if self._colorChargeFieldExists:
+        if self._colorChargeFieldExists and not forceCalculate:
             return self._colorChargeField
 
         # Centered gaussian distribution defined by class parameters
@@ -330,7 +397,7 @@ with a width equal to <code>radius</code>.</p>
         protonGaussianCorrection = np.array([gaussian(i*self.delta, np.arange(0, self.N)*self.delta) for i in np.arange(0, self.N)])
 
         # Randomly generate the intial color charge density using a gaussian distribution
-        self._colorChargeField = np.random.normal(scale=self.gaussianWidth, size=(self.gluonDOF, self.N, self.N))
+        self._colorChargeField = self.rng.normal(scale=self.gaussianWidth, size=(self.gluonDOF, self.N, self.N))
         self._colorChargeField *= protonGaussianCorrection # Apply the correction
 
         # Make sure we don&#39;t regenerate this field since it already exists on future calls
@@ -345,28 +412,51 @@ with a width equal to <code>radius</code>.</p>
 <h3>Methods</h3>
 <dl>
 <dt id="cgc.Wavefunction.Proton.colorChargeField"><code class="name flex">
-<span>def <span class="ident">colorChargeField</span></span>(<span>self)</span>
+<span>def <span class="ident">colorChargeField</span></span>(<span>self, forceCalculate=False)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Generates the color charge density field according to a gaussian distribution, which decays according
 to a centered (different) gaussian distribution. That is, the field <span><span class="MathJax_Preview">\rho</span><script type="math/tex">\rho</script></span> satisfies:</p>
 <p><span><span class="MathJax_Preview"> \langle \rho_{a}^{(p)}(\vec x_{\perp} ) \rho_{b}^{(p)}(\vec y_{\perp} ) \rangle = g^2\mu_p^2 ~\exp\left( -\frac{\vec x_{\perp}^{2}}{2R_{p}^2} \right) ~\delta_{ab}~\delta^{(2)}(\vec x_{\perp}-\vec y_{\perp}) </span><script type="math/tex; mode=display"> \langle \rho_{a}^{(p)}(\vec x_{\perp} ) \rho_{b}^{(p)}(\vec y_{\perp} ) \rangle = g^2\mu_p^2 ~\exp\left( -\frac{\vec x_{\perp}^{2}}{2R_{p}^2} \right) ~\delta_{ab}~\delta^{(2)}(\vec x_{\perp}-\vec y_{\perp}) </script></span></p>
-<p>If the field already exists, it is simply returned and no calculation is done.</p></div>
+<p>If the field already exists, it is simply returned and no calculation is done.</p>
+<h2 id="parameters">Parameters</h2>
+<dl>
+<dt><strong><code>forceCalculate</code></strong> :&ensp;<code>bool (default=False)</code></dt>
+<dd>If the quantity has previously been calculated, the calculation will not be done
+again unless this argument is set to True.</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><strong><code>colorChargeField</code></strong> :&ensp;<code>array(</code>colorCharges<code>**2 - 1, N, N)</code></dt>
+<dd>&nbsp;</dd>
+</dl></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def colorChargeField(self):
+<pre><code class="python">def colorChargeField(self, forceCalculate=False):
     r&#34;&#34;&#34;
     Generates the color charge density field according to a gaussian distribution, which decays according
     to a centered (different) gaussian distribution. That is, the field \(\rho\) satisfies:
 
     $$ \langle \rho_{a}^{(p)}(\vec x_{\perp} ) \rho_{b}^{(p)}(\vec y_{\perp} ) \rangle = g^2\mu_p^2 ~\exp\left( -\frac{\vec x_{\perp}^{2}}{2R_{p}^2} \right) ~\delta_{ab}~\delta^{(2)}(\vec x_{\perp}-\vec y_{\perp}) $$
 
-
     If the field already exists, it is simply returned and no calculation is done.
+
+
+    Parameters
+    ----------
+
+    forceCalculate : bool (default=False)
+        If the quantity has previously been calculated, the calculation will not be done
+        again unless this argument is set to True.
+
+    Returns
+    -------
+
+    colorChargeField : array(`colorCharges`**2 - 1, N, N)
     &#34;&#34;&#34;
-    if self._colorChargeFieldExists:
+    if self._colorChargeFieldExists and not forceCalculate:
         return self._colorChargeField
 
     # Centered gaussian distribution defined by class parameters
@@ -376,7 +466,7 @@ to a centered (different) gaussian distribution. That is, the field <span><span 
     protonGaussianCorrection = np.array([gaussian(i*self.delta, np.arange(0, self.N)*self.delta) for i in np.arange(0, self.N)])
 
     # Randomly generate the intial color charge density using a gaussian distribution
-    self._colorChargeField = np.random.normal(scale=self.gaussianWidth, size=(self.gluonDOF, self.N, self.N))
+    self._colorChargeField = self.rng.normal(scale=self.gaussianWidth, size=(self.gluonDOF, self.N, self.N))
     self._colorChargeField *= protonGaussianCorrection # Apply the correction
 
     # Make sure we don&#39;t regenerate this field since it already exists on future calls
@@ -397,7 +487,7 @@ to a centered (different) gaussian distribution. That is, the field <span><span 
 </dd>
 <dt id="cgc.Wavefunction.Wavefunction"><code class="flex name class">
 <span>class <span class="ident">Wavefunction</span></span>
-<span>(</span><span>colorCharges, N, delta, mu, M=0.5, g=1)</span>
+<span>(</span><span>colorCharges, N, delta, mu, M=0.5, g=1, rngSeed=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Base wavefunction class inplementing a generic color charge and gauge field
@@ -416,6 +506,8 @@ in an arbitrary special unitary group, <span><span class="MathJax_Preview">SU</s
 <dd>Infrared regulator parameter to regularize the Poisson equation for the gauge field.</dd>
 <dt><strong><code>g</code></strong> :&ensp;<code>float (default=1)</code></dt>
 <dd>Parameter in the Poisson equation for the gauge field</dd>
+<dt><strong><code>rngSeed</code></strong> :&ensp;<code>int (default=None)</code></dt>
+<dd>Seed for the random number generator to initialize the color charge field</dd>
 </dl></div>
 <details class="source">
 <summary>
@@ -433,7 +525,7 @@ in an arbitrary special unitary group, <span><span class="MathJax_Preview">SU</s
     #_wilsonLineExists = False # May not be implemented depending on nucleus/proton
     #_adjointWilsonLineExists = False # May not be implemented depending on nucleus/proton
 
-    def __init__(self, colorCharges, N, delta, mu, M=.5, g=1):
+    def __init__(self, colorCharges, N, delta, mu, M=.5, g=1, rngSeed=None):
         r&#34;&#34;&#34;
 
         Base wavefunction class inplementing a generic color charge and gauge field
@@ -458,6 +550,9 @@ in an arbitrary special unitary group, <span><span class="MathJax_Preview">SU</s
 
         g : float (default=1)
             Parameter in the Poisson equation for the gauge field
+
+        rngSeed : int (default=None)
+            Seed for the random number generator to initialize the color charge field
         &#34;&#34;&#34;
 
         self.N = N
@@ -479,25 +574,44 @@ in an arbitrary special unitary group, <span><span class="MathJax_Preview">SU</s
         self.xCenter = self.yCenter = self.length / 2
         self.poissonReg = (self.M2 * self.delta2) / 2
 
-    def colorChargeField(self):
+        # Setup the random number generator
+        if rngSeed != None:
+            self.rng = np.random.default_rng(rngSeed)
+        else:
+            self.rng = np.random.default_rng()
+
+    def colorChargeField(self, forceCalculate=False):
         r&#34;&#34;&#34;
         Generates the color charge density 2-d field according to a gaussian distribution.
         The width of the gaussian is given by `mu` divided by the discretization `delta`. 
 
         If the field already exists, it is simply returned and no calculation is done.
+
+
+        Parameters
+        ----------
+
+        forceCalculate : bool (default=False)
+            If the quantity has previously been calculated, the calculation will not be done
+            again unless this argument is set to True.
+
+        Returns
+        -------
+
+        colorChargeField : array(`colorCharges`**2 - 1, N, N)
         &#34;&#34;&#34;
-        if self._colorChargeFieldExists:
+        if self._colorChargeFieldExists and not forceCalculate:
             return self._colorChargeField
 
         # Randomly generate the intial color charge density using a gaussian distribution
-        self._colorChargeField = np.random.normal(scale=self.gaussianWidth, size=(self.gluonDOF, self.N, self.N))
+        self._colorChargeField = self.rng.normal(scale=self.gaussianWidth, size=(self.gluonDOF, self.N, self.N))
         # Make sure we don&#39;t regenerate this field since it already exists on future calls
         self._colorChargeFieldExists = True
 
         return self._colorChargeField
 
 
-    def gaugeField(self):
+    def gaugeField(self, forceCalculate=False):
         r&#34;&#34;&#34;
         Calculates the gauge field for the given color charge distribution by solving the (modified)
         Poisson equation involving the color charge field
@@ -507,8 +621,21 @@ in an arbitrary special unitary group, <span><span class="MathJax_Preview">SU</s
         via Fourier method.
 
         If the field already exists, it is simply returned and no calculation is done.
+
+
+        Parameters
+        ----------
+
+        forceCalculate : bool (default=False)
+            If the quantity has previously been calculated, the calculation will not be done
+            again unless this argument is set to True.
+
+        Returns
+        -------
+
+        gaugeField : array(`colorCharges`**2 - 1, N, N)
         &#34;&#34;&#34;
-        if self._gaugeFieldExists:
+        if self._gaugeFieldExists and not forceCalculate:
             return self._gaugeField
 
         # Make sure the charge field has already been generated (if not, this will generate it)
@@ -557,28 +684,52 @@ in an arbitrary special unitary group, <span><span class="MathJax_Preview">SU</s
 <h3>Methods</h3>
 <dl>
 <dt id="cgc.Wavefunction.Wavefunction.colorChargeField"><code class="name flex">
-<span>def <span class="ident">colorChargeField</span></span>(<span>self)</span>
+<span>def <span class="ident">colorChargeField</span></span>(<span>self, forceCalculate=False)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Generates the color charge density 2-d field according to a gaussian distribution.
 The width of the gaussian is given by <code>mu</code> divided by the discretization <code>delta</code>. </p>
-<p>If the field already exists, it is simply returned and no calculation is done.</p></div>
+<p>If the field already exists, it is simply returned and no calculation is done.</p>
+<h2 id="parameters">Parameters</h2>
+<dl>
+<dt><strong><code>forceCalculate</code></strong> :&ensp;<code>bool (default=False)</code></dt>
+<dd>If the quantity has previously been calculated, the calculation will not be done
+again unless this argument is set to True.</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><strong><code>colorChargeField</code></strong> :&ensp;<code>array(</code>colorCharges<code>**2 - 1, N, N)</code></dt>
+<dd>&nbsp;</dd>
+</dl></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def colorChargeField(self):
+<pre><code class="python">def colorChargeField(self, forceCalculate=False):
     r&#34;&#34;&#34;
     Generates the color charge density 2-d field according to a gaussian distribution.
     The width of the gaussian is given by `mu` divided by the discretization `delta`. 
 
     If the field already exists, it is simply returned and no calculation is done.
+
+
+    Parameters
+    ----------
+
+    forceCalculate : bool (default=False)
+        If the quantity has previously been calculated, the calculation will not be done
+        again unless this argument is set to True.
+
+    Returns
+    -------
+
+    colorChargeField : array(`colorCharges`**2 - 1, N, N)
     &#34;&#34;&#34;
-    if self._colorChargeFieldExists:
+    if self._colorChargeFieldExists and not forceCalculate:
         return self._colorChargeField
 
     # Randomly generate the intial color charge density using a gaussian distribution
-    self._colorChargeField = np.random.normal(scale=self.gaussianWidth, size=(self.gluonDOF, self.N, self.N))
+    self._colorChargeField = self.rng.normal(scale=self.gaussianWidth, size=(self.gluonDOF, self.N, self.N))
     # Make sure we don&#39;t regenerate this field since it already exists on future calls
     self._colorChargeFieldExists = True
 
@@ -586,7 +737,7 @@ The width of the gaussian is given by <code>mu</code> divided by the discretizat
 </details>
 </dd>
 <dt id="cgc.Wavefunction.Wavefunction.gaugeField"><code class="name flex">
-<span>def <span class="ident">gaugeField</span></span>(<span>self)</span>
+<span>def <span class="ident">gaugeField</span></span>(<span>self, forceCalculate=False)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Calculates the gauge field for the given color charge distribution by solving the (modified)
@@ -595,12 +746,23 @@ Poisson equation involving the color charge field</p>
 } {\partial_\perp^2 - m^2 } \rho_a(i^-, \vec {i}_\perp )</span><script type="math/tex; mode=display">g \frac{1
 } {\partial_\perp^2 - m^2 } \rho_a(i^-, \vec {i}_\perp )</script></span></p>
 <p>via Fourier method.</p>
-<p>If the field already exists, it is simply returned and no calculation is done.</p></div>
+<p>If the field already exists, it is simply returned and no calculation is done.</p>
+<h2 id="parameters">Parameters</h2>
+<dl>
+<dt><strong><code>forceCalculate</code></strong> :&ensp;<code>bool (default=False)</code></dt>
+<dd>If the quantity has previously been calculated, the calculation will not be done
+again unless this argument is set to True.</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><strong><code>gaugeField</code></strong> :&ensp;<code>array(</code>colorCharges<code>**2 - 1, N, N)</code></dt>
+<dd>&nbsp;</dd>
+</dl></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def gaugeField(self):
+<pre><code class="python">def gaugeField(self, forceCalculate=False):
     r&#34;&#34;&#34;
     Calculates the gauge field for the given color charge distribution by solving the (modified)
     Poisson equation involving the color charge field
@@ -610,8 +772,21 @@ Poisson equation involving the color charge field</p>
     via Fourier method.
 
     If the field already exists, it is simply returned and no calculation is done.
+
+
+    Parameters
+    ----------
+
+    forceCalculate : bool (default=False)
+        If the quantity has previously been calculated, the calculation will not be done
+        again unless this argument is set to True.
+
+    Returns
+    -------
+
+    gaugeField : array(`colorCharges`**2 - 1, N, N)
     &#34;&#34;&#34;
-    if self._gaugeFieldExists:
+    if self._gaugeFieldExists and not forceCalculate:
         return self._gaugeField
 
     # Make sure the charge field has already been generated (if not, this will generate it)
