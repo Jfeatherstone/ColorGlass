@@ -92,7 +92,7 @@ class Wavefunction():
             again unless this argument is set to True.
 
         verbose : int (default=0)
-            How much output should be printed as calculations are done. Options are 0 or 1.
+            How much output should be printed as calculations are done. Options are 0, 1, or 2.
 
         Returns
         -------
@@ -136,7 +136,7 @@ class Wavefunction():
             again unless this argument is set to True.
 
         verbose : int (default=0)
-            How much output should be printed as calculations are done. Options are 0 or 1.
+            How much output should be printed as calculations are done. Options are 0, 1, or 2.
 
         Returns
         -------
@@ -259,7 +259,7 @@ class Proton(Wavefunction):
             again unless this argument is set to True.
 
         verbose : int (default=0)
-            How much output should be printed as calculations are done. Options are 0 or 1.
+            How much output should be printed as calculations are done. Options are 0, 1, or 2.
 
         Returns
         -------
