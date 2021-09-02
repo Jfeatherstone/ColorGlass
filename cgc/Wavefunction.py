@@ -76,7 +76,7 @@ class Wavefunction():
         else:
             self.rng = np.random.default_rng()
 
-    def colorChargeField(self, forceCalculate=False):
+    def colorChargeField(self, forceCalculate=False, verbose=0):
         r"""
         Generates the color charge density 2-d field according to a gaussian distribution.
         The width of the gaussian is given by `mu` divided by the discretization `delta`. 
@@ -91,6 +91,9 @@ class Wavefunction():
             If the quantity has previously been calculated, the calculation will not be done
             again unless this argument is set to True.
 
+        verbose : int (default=0)
+            How much output should be printed as calculations are done. Options are 0 or 1.
+
         Returns
         -------
 
@@ -99,15 +102,21 @@ class Wavefunction():
         if self._colorChargeFieldExists and not forceCalculate:
             return self._colorChargeField
 
+        if verbose > 0:
+            print(f'Generating {type(self).__name__} color charge field' + '.'*10, end='')
+
         # Randomly generate the intial color charge density using a gaussian distribution
         self._colorChargeField = self.rng.normal(scale=self.gaussianWidth, size=(self.gluonDOF, self.N, self.N))
         # Make sure we don't regenerate this field since it already exists on future calls
         self._colorChargeFieldExists = True
 
+        if verbose > 0:
+            print('finished!')
+
         return self._colorChargeField
 
 
-    def gaugeField(self, forceCalculate=False):
+    def gaugeField(self, forceCalculate=False, verbose=0):
         r"""
         Calculates the gauge field for the given color charge distribution by solving the (modified)
         Poisson equation involving the color charge field
@@ -126,6 +135,9 @@ class Wavefunction():
             If the quantity has previously been calculated, the calculation will not be done
             again unless this argument is set to True.
 
+        verbose : int (default=0)
+            How much output should be printed as calculations are done. Options are 0 or 1.
+
         Returns
         -------
 
@@ -135,9 +147,16 @@ class Wavefunction():
             return self._gaugeField
 
         # Make sure the charge field has already been generated (if not, this will generate it)
-        self.colorChargeField()
+        self.colorChargeField(verbose=verbose)
+
+        if verbose > 0:
+            print(f'Calculating {type(self).__name__} gauge field' + '.'*10, end='')
 
         # Compute the fourier transform of the charge field
+        # We want to do the normalization explicitly below, but scipy doesn't offer no
+        # normalization as an option, so we just set it to be the opposite of whatever
+        # we are doing (forward for ifft, backward for fft)
+        # (we had some issues with scipy changing its default mode)
         chargeDensityFFTArr = fft2(self._colorChargeField, axes=(-2,-1), norm='backward')
 
         # Absorb the numerator constants in the equation above into the charge density
@@ -164,9 +183,18 @@ class Wavefunction():
             gaugeFieldFFTArr[k] = [vec_AHat_mn(i, jArr, chargeDensityFFTArr[k,i,jArr]) for i in iArr]
 
         # Take the inverse fourier transform to get the actual gauge field
-        self._gaugeField = np.real(ifft2(gaugeFieldFFTArr, axes=(-2, -1), norm='backward'))
+        # We want to do the normalization explicitly below, but scipy doesn't offer no
+        # normalization as an option, so we just set it to be the opposite of whatever
+        # we are doing (forward for ifft, backward for fft)
+        # (we had some issues with scipy changing its default mode)
+        self._gaugeField = np.real(ifft2(gaugeFieldFFTArr, axes=(-2, -1), norm='forward'))
+        self._gaugeField /= self.N2
+
         # Make sure this process isn't repeated unnecessarily by denoting that it has been done
         self._gaugeFieldExists = True
+
+        if verbose > 0:
+            print('finished!')
 
         return self._gaugeField
 
@@ -213,7 +241,7 @@ class Proton(Wavefunction):
         super().__init__(colorCharges, N, delta, mu, M, g, rngSeed) # Super constructor
         self.radius = radius
 
-    def colorChargeField(self, forceCalculate=False):
+    def colorChargeField(self, forceCalculate=False, verbose=0):
         r"""
         Generates the color charge density field according to a gaussian distribution, which decays according
         to a centered (different) gaussian distribution. That is, the field \(\rho\) satisfies:
@@ -230,6 +258,9 @@ class Proton(Wavefunction):
             If the quantity has previously been calculated, the calculation will not be done
             again unless this argument is set to True.
 
+        verbose : int (default=0)
+            How much output should be printed as calculations are done. Options are 0 or 1.
+
         Returns
         -------
 
@@ -237,6 +268,9 @@ class Proton(Wavefunction):
         """
         if self._colorChargeFieldExists and not forceCalculate:
             return self._colorChargeField
+
+        if verbose > 0:
+            print(f'Generating {type(self).__name__} color charge field' + '.'*10, end='')
 
         # Centered gaussian distribution defined by class parameters
         def gaussian(x, y, r=self.radius, xc=self.xCenter, yc=self.yCenter):
@@ -250,5 +284,8 @@ class Proton(Wavefunction):
 
         # Make sure we don't regenerate this field since it already exists on future calls
         self._colorChargeFieldExists = True
+
+        if verbose > 0:
+            print('finished!')
 
         return self._colorChargeField
