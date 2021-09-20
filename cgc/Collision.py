@@ -167,7 +167,7 @@ class Collision():
         # normalization as an option, so we just set it to be the opposite of whatever
         # we are doing (forward for ifft, backward for fft)
         # (we had some issues with scipy changing its default mode)
-        self._omegaFFT = fft2(self._omega, axes=(-2, -1), norm='backward')
+        self._omegaFFT = self.delta2 * fft2(self._omega, axes=(-2, -1), norm='backward')
         self._omegaFFTExists = True
 
         if verbose > 0:
