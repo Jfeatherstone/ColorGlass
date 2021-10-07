@@ -8,7 +8,7 @@ setuptools.setup(
      version='1.0',
      author="Jack Featherstone, Vladimir Skokov",
      author_email="jdfeathe@ncsu.edu",
-     description="Simulation code for color glass condensates in dense-dilute approximation.",
+     description="Simulation framework for color glass condensates in dense-dilute approximation.",
      long_description=long_description,
      long_description_content_type="text/markdown",
      url="https://github.com/Jfeatherstone/ColorGlass",

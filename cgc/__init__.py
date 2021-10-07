@@ -101,6 +101,8 @@ From here, quantities can be generated from calling any of the three objects abo
 
 """
 
+VERSION = "1.0"
+
 from .Wavefunction import Wavefunction, Proton
 from .Collision import Collision
 
