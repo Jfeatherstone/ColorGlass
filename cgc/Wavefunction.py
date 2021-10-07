@@ -97,7 +97,7 @@ class Wavefunction():
         Returns
         -------
 
-        colorChargeField : array(`colorCharges`**2 - 1, N, N)
+        colorChargeField : array(N, N, `colorCharges`**2 - 1)
         """
         if self._colorChargeFieldExists and not forceCalculate:
             return self._colorChargeField
@@ -106,7 +106,7 @@ class Wavefunction():
             print(f'Generating {type(self).__name__} color charge field' + '.'*10, end='')
 
         # Randomly generate the intial color charge density using a gaussian distribution
-        self._colorChargeField = self.rng.normal(scale=self.gaussianWidth, size=(self.gluonDOF, self.N, self.N))
+        self._colorChargeField = self.rng.normal(scale=self.gaussianWidth, size=(self.N, self.N, self.gluonDOF))
         # Make sure we don't regenerate this field since it already exists on future calls
         self._colorChargeFieldExists = True
 
@@ -157,7 +157,7 @@ class Wavefunction():
         # normalization as an option, so we just set it to be the opposite of whatever
         # we are doing (forward for ifft, backward for fft)
         # (we had some issues with scipy changing its default mode)
-        chargeDensityFFTArr = fft2(self._colorChargeField, axes=(-2,-1), norm='backward')
+        chargeDensityFFTArr = fft2(self._colorChargeField, axes=(0,1), norm='backward')
 
         # Absorb the numerator constants in the equation above into the charge density
         chargeDensityFFTArr = -self.delta2 * self.g / 2 * chargeDensityFFTArr
@@ -180,14 +180,14 @@ class Wavefunction():
         gaugeFieldFFTArr = np.zeros_like(self._colorChargeField, dtype='complex')
 
         for k in range(self.gluonDOF):
-            gaugeFieldFFTArr[k] = [vec_AHat_mn(i, jArr, chargeDensityFFTArr[k,i,jArr]) for i in iArr]
+            gaugeFieldFFTArr[:,:,k] = [vec_AHat_mn(i, jArr, chargeDensityFFTArr[i,jArr,k]) for i in iArr]
 
         # Take the inverse fourier transform to get the actual gauge field
         # We want to do the normalization explicitly below, but scipy doesn't offer no
         # normalization as an option, so we just set it to be the opposite of whatever
         # we are doing (forward for ifft, backward for fft)
         # (we had some issues with scipy changing its default mode)
-        self._gaugeField = np.real(ifft2(gaugeFieldFFTArr, axes=(-2, -1), norm='forward'))
+        self._gaugeField = np.real(ifft2(gaugeFieldFFTArr, axes=(0,1), norm='forward'))
         self._gaugeField /= self.N2
 
         # Make sure this process isn't repeated unnecessarily by denoting that it has been done
@@ -264,7 +264,7 @@ class Proton(Wavefunction):
         Returns
         -------
 
-        colorChargeField : array(`colorCharges`**2 - 1, N, N)
+        colorChargeField : array(N, N, `colorCharges`**2 - 1)
         """
         if self._colorChargeFieldExists and not forceCalculate:
             return self._colorChargeField
@@ -278,9 +278,15 @@ class Proton(Wavefunction):
 
         protonGaussianCorrection = np.array([gaussian(i*self.delta, np.arange(0, self.N)*self.delta) for i in np.arange(0, self.N)])
 
+        # For comparison to old results
+        #self._colorChargeField = self.rng.normal(scale=self.gaussianWidth, size=(self.gluonDOF, self.N, self.N))
+        #self._colorChargeField = self._colorChargeField.swapaxes(0, 1)
+        #self._colorChargeField = self._colorChargeField.swapaxes(1, 2)
+
         # Randomly generate the intial color charge density using a gaussian distribution
-        self._colorChargeField = self.rng.normal(scale=self.gaussianWidth, size=(self.gluonDOF, self.N, self.N))
-        self._colorChargeField *= protonGaussianCorrection # Apply the correction
+        self._colorChargeField = self.rng.normal(scale=self.gaussianWidth, size=(self.N, self.N, self.gluonDOF))
+        for i in range(self.gluonDOF):
+            self._colorChargeField[:,:,i] *= protonGaussianCorrection # Apply the correction
 
         # Make sure we don't regenerate this field since it already exists on future calls
         self._colorChargeFieldExists = True

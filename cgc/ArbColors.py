@@ -83,7 +83,7 @@ class Nucleus(Wavefunction):
         Returns
         -------
 
-        colorChargeField : array(Ny, `colorCharges`**2 - 1, N, N)
+        colorChargeField : array(Ny, N, N, `colorCharges`**2 - 1)
         """
         if self._colorChargeFieldExists and not forceCalculate:
             return self._colorChargeField
@@ -91,8 +91,13 @@ class Nucleus(Wavefunction):
         if verbose > 0:
             print(f'Generating {type(self).__name__} color charge field' + '.'*10, end='')
 
+        # To compare to old results
+        #self._colorChargeField = self.rng.normal(scale=self.gaussianWidth, size=(self.Ny, self.gluonDOF, self.N, self.N))
+        #self._colorChargeField = self._colorChargeField.swapaxes(1, 2)
+        #self._colorChargeField = self._colorChargeField.swapaxes(2, 3)
+
         # Randomly generate the intial color charge density using a gaussian distribution
-        self._colorChargeField = self.rng.normal(scale=self.gaussianWidth, size=(self.Ny, self.gluonDOF, self.N, self.N))
+        self._colorChargeField = self.rng.normal(scale=self.gaussianWidth, size=(self.Ny, self.N, self.N, self.gluonDOF))
         # Make sure we don't regenerate this field since it already exists on future calls
         self._colorChargeFieldExists = True
 
@@ -127,7 +132,7 @@ class Nucleus(Wavefunction):
         Returns
         -------
 
-        gaugeField : array(Ny, `colorCharges`**2 - 1, N, N)
+        gaugeField : array(Ny, N, N, `colorCharges`**2 - 1)
         """
 
         if self._gaugeFieldExists and not forceCalculate:
@@ -142,7 +147,7 @@ class Nucleus(Wavefunction):
         # Compute the fourier transform of the charge field
         # Note that the normalization is set to 'backward', which for scipy means that the
         # ifft2 is scaled by 1/n (where n = N^2)
-        chargeDensityFFTArr = fft2(self._colorChargeField, axes=(-2,-1), norm='backward')
+        chargeDensityFFTArr = fft2(self._colorChargeField, axes=(1,2), norm='backward')
 
         # Absorb the numerator constants in the equation above into the charge density
         chargeDensityFFTArr = -self.delta2 * self.g / 2 * chargeDensityFFTArr
@@ -153,7 +158,7 @@ class Nucleus(Wavefunction):
         gaugeFieldFFTArr = _calculateGaugeFFTOpt(self.gluonDOF, self.N, self.Ny, self.poissonReg, chargeDensityFFTArr); 
 
         # Take the inverse fourier transform to get the actual gauge field
-        self._gaugeField = np.real(ifft2(gaugeFieldFFTArr, axes=(-2, -1), norm='backward'))
+        self._gaugeField = np.real(ifft2(gaugeFieldFFTArr, axes=(1,2), norm='backward'))
 
         # Make sure this process isn't repeated unnecessarily by denoting that it has been done
         self._gaugeFieldExists = True
@@ -225,7 +230,7 @@ class Nucleus(Wavefunction):
         Returns
         -------
 
-        adjointWilsonLine : array(`colorCharges`**2 - 1, `colorCharges`**2 - 1, N, N)
+        adjointWilsonLine : array(N, N, `colorCharges`**2 - 1, `colorCharges`**2 - 1)
         """
         if self._adjointWilsonLineExists and not forceCalculate:
             return self._adjointWilsonLine
@@ -250,7 +255,7 @@ class Nucleus(Wavefunction):
 
 # Since we want to speed up the calculate, we define the calculation of the fourier elements of
 # the gauge field using a numba-compiled method
-# This has to be defined outside of the Nuclelus class since numbda doesn't play well with custom libraries
+# This has to be defined outside of the Nuclelus class since numbda doesn't play well with custom classes
 @numba.jit(nopython=True, cache=True)
 def _calculateGaugeFFTOpt(gluonDOF, N, Ny, poissonReg, chargeDensityFFTArr):
     r"""
@@ -267,7 +272,7 @@ def _calculateGaugeFFTOpt(gluonDOF, N, Ny, poissonReg, chargeDensityFFTArr):
         for k in range(gluonDOF):
             for i in range(N):
                 for j in range(N):
-                    gaugeFieldFFTArr[l,k,i,j] = chargeDensityFFTArr[l,k,i,j]/(2 - np.cos(two_pi_over_N*i) - np.cos(two_pi_over_N*j) + poissonReg) 
+                    gaugeFieldFFTArr[l,i,j,k] = chargeDensityFFTArr[l,i,j,k]/(2 - np.cos(two_pi_over_N*i) - np.cos(two_pi_over_N*j) + poissonReg) 
     return gaugeFieldFFTArr
 
 
@@ -300,7 +305,7 @@ def _calculateWilsonLineOpt(N, Ny, colorCharges, basis, gaugeField):
                 # by the respective basis matrix and sum them together
                 expArgument = np.zeros((colorCharges, colorCharges), dtype='complex') # Same shape as basis matrices
                 for k in range(gluonDOF):
-                    expArgument = expArgument + gaugeField[l,k,i,j] * basis[k]
+                    expArgument = expArgument + gaugeField[l,i,j,k] * basis[k]
                 
                 # Now actually calculate the exponential with our custom defined expm method
                 # that can properly interface with numba (scipy's can't)
@@ -318,7 +323,7 @@ def _calculateAdjointWilsonLineOpt(gluonDOF, N, basis, wilsonLine):
     This method is optimized using numba
     """
     # Wilson line is always real in adjoint representation, so need to dtype='complex' as with the others
-    adjointWilsonLine = np.zeros((gluonDOF, gluonDOF, N, N), dtype='double')
+    adjointWilsonLine = np.zeros((N, N, gluonDOF, gluonDOF), dtype='double')
 
     for a in range(gluonDOF):
         for b in range(gluonDOF):
@@ -326,6 +331,6 @@ def _calculateAdjointWilsonLineOpt(gluonDOF, N, basis, wilsonLine):
                 for j in range(N):
                     V = wilsonLine[i,j]
                     Vdag = np.conjugate(np.transpose(V))
-                    adjointWilsonLine[a,b,i,j] = 2 * np.real(np.trace(np.dot(np.dot(basis[a], V), np.dot(basis[b], Vdag))))
+                    adjointWilsonLine[i,j,a,b] = 2 * np.real(np.trace(np.dot(np.dot(basis[a], V), np.dot(basis[b], Vdag))))
 
     return adjointWilsonLine

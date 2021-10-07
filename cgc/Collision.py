@@ -109,7 +109,7 @@ class Collision():
         Returns
         -------
 
-        omega : array(2, 2, `colorCharges`**2 - 1, N, N)
+        omega : array(N, N, 2, 2, `colorCharges`**2 - 1)
 
         """
 
@@ -151,7 +151,7 @@ class Collision():
         Returns
         -------
 
-        omegaFFT : array(2, 2, `colorCharges`**2 - 1, N, N)
+        omegaFFT : array(N, N, 2, 2, `colorCharges`**2 - 1)
 
         """
         if self._omegaFFTExists and not forceCalculate:
@@ -167,7 +167,7 @@ class Collision():
         # normalization as an option, so we just set it to be the opposite of whatever
         # we are doing (forward for ifft, backward for fft)
         # (we had some issues with scipy changing its default mode)
-        self._omegaFFT = self.delta2 * fft2(self._omega, axes=(-2, -1), norm='backward')
+        self._omegaFFT = self.delta2 * fft2(self._omega, axes=(0,1), norm='backward')
         self._omegaFFTExists = True
 
         if verbose > 0:
@@ -483,12 +483,12 @@ def _calculateOmegaOpt(N, gluonDOF, delta, incidentGaugeField, targetAdjointWils
 
     Returns
     -------
-    numpy.array : shape=(2, 2, `colorCharges`**2 - 1, N, N)
+    numpy.array : shape=(N, N, 2, 2, `colorCharges`**2 - 1)
 
     """
 
     # 2,2 is for the 2 dimensions, x and y
-    omega = np.zeros((2, 2, gluonDOF, N, N), dtype='complex') # 2 is for two dimensions, x and y
+    omega = np.zeros((N, N, 2, 2, gluonDOF), dtype='complex') # 2 is for two dimensions, x and y
 
     derivs = [_x_deriv, _y_deriv]
 
@@ -497,7 +497,7 @@ def _calculateOmegaOpt(N, gluonDOF, delta, incidentGaugeField, targetAdjointWils
             for k in range(gluonDOF):
                 for l in range(2): # 2 is number of dimensions
                     for n in range(2): # 2 is number of dimensions
-                        omega[l,n,k,i,j] = np.sum(np.array([derivs[l](incidentGaugeField[m], i, j, N, delta) * derivs[n](targetAdjointWilsonLine[k, m], i, j, N, delta) for m in range(gluonDOF)]))
+                        omega[i,j,l,n,k] = np.sum(np.array([derivs[l](incidentGaugeField[:,:,m], i, j, N, delta) * derivs[n](targetAdjointWilsonLine[:,:,k,m], i, j, N, delta) for m in range(gluonDOF)]))
 
     return omega
 
@@ -575,6 +575,8 @@ def _calculateParticlesProducedDerivOpt(N, gluonDOF, momentaMagSquared, omegaFFT
     # # 2D Delta function
     KDF = np.array([[1,0],[0,1]])
 
+    # Note that unlike in the rest of the code, i and j *do not* refer to the
+    # spacial indices here: x and y do (too many indices... :/ )
     for y in range(N):
         for x in range(N):
             # To prevent any divide by zero errors
@@ -590,6 +592,6 @@ def _calculateParticlesProducedDerivOpt(N, gluonDOF, momentaMagSquared, omegaFFT
                             for a in range(gluonDOF):
                                 particleProduction[y,x] += np.real(2/(2*np.pi)**3 / momentaMagSquared[y,x] * (
                                     (KDF[i,j]*KDF[l,m] + LCS[i,j]*LCS[l,m])) * (
-                                        omegaFFT[i,j,a,y,x] * np.conj(omegaFFT[l,m,a,y,x])))
+                                        omegaFFT[y,x,i,j,a] * np.conj(omegaFFT[y,x,l,m,a])))
 
     return particleProduction
